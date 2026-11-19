@@ -33,6 +33,19 @@ function Get-LinkTarget($Item) {
   return Get-NormalizedPath $t
 }
 
+function Invoke-GitQuiet([string[]]$GitArgs) {
+  # Windows PowerShell 5.1 turns stderr of a native command into a terminating error when
+  # $ErrorActionPreference is 'Stop', even with 2>$null. Run git with 'Continue' and use the exit code.
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $output = & git @GitArgs 2>$null
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+  } finally {
+    $ErrorActionPreference = $previous
+  }
+}
+
 function Remove-Junction([string]$Path) {
   # Non-recursive delete: removes the junction only, never the content of the target.
   [System.IO.Directory]::Delete($Path, $false)
@@ -62,14 +75,14 @@ if ($Uninstall) {
 
 # Release check: a release is installed from a tag, with no local changes.
 if (Get-Command git -ErrorAction SilentlyContinue) {
-  $tag = git -C $RepoDir describe --exact-match --tags 2>$null
-  if ($LASTEXITCODE -eq 0 -and $tag) {
-    Write-Host "Release tag: $tag"
+  $tag = Invoke-GitQuiet @('-C', $RepoDir, 'describe', '--exact-match', '--tags')
+  if ($tag.ExitCode -eq 0 -and $tag.Output) {
+    Write-Host "Release tag: $($tag.Output)"
   } else {
     Write-Warning 'The repository is not at a release tag. This is a development version.'
   }
-  $dirty = git -C $RepoDir status --porcelain -- "$Skill/$Skill" 2>$null
-  if ($dirty) { Write-Warning 'The skill folder has uncommitted changes.' }
+  $dirty = Invoke-GitQuiet @('-C', $RepoDir, 'status', '--porcelain', '--', "$Skill/$Skill")
+  if ($dirty.Output) { Write-Warning 'The skill folder has uncommitted changes.' }
 }
 
 # Integrity check: only when the release manifest exists.
