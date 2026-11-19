@@ -1,0 +1,4 @@
+# Same bytes on Windows, WSL, Linux and macOS: required for SHA256SUMS verification
+* text=auto eol=lf
+*.png binary
+*.jpg binary
