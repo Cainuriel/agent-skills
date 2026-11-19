@@ -1,0 +1,50 @@
+# node-security protocol 0.1.0 - CI policy check for pnpm repositories
+# Actions are pinned to full commit SHAs. The tag is in the comment. Update both together.
+name: node-security
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Enforce package manager policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          found=$(find . -path ./node_modules -prune -o \( -name package-lock.json -o -name npm-shrinkwrap.json -o -name yarn.lock -o -name bun.lock -o -name bun.lockb \) -print)
+          if [ -n "$found" ]; then echo "::error::Forbidden lockfile: $found"; fail=1; fi
+          [ -f pnpm-lock.yaml ] || { echo "::error::Missing pnpm-lock.yaml"; fail=1; }
+          [ -f pnpm-workspace.yaml ] || { echo "::error::Missing pnpm-workspace.yaml"; fail=1; }
+          if [ -f pnpm-workspace.yaml ]; then
+            grep -Eq '^(dangerouslyAllowAllBuilds|trustLockfile):[[:space:]]*true' pnpm-workspace.yaml && { echo "::error::Forbidden pnpm setting"; fail=1; }
+            age=$(sed -nE 's/^minimumReleaseAge:[[:space:]]*([0-9]+).*/\1/p' pnpm-workspace.yaml)
+            if [ -n "$age" ] && [ "$age" -lt 1440 ]; then echo "::error::minimumReleaseAge must be 1440 or more"; fail=1; fi
+            grep -Eq '^trustPolicy:[[:space:]]*no-downgrade' pnpm-workspace.yaml || { echo "::error::trustPolicy must be no-downgrade"; fail=1; }
+          fi
+          node -e '
+            const p = require("./package.json");
+            if (!/^pnpm@\d+\.\d+\.\d+/.test(p.packageManager || "")) { console.log("::error::packageManager must be pnpm@<exact-version>"); process.exit(1); }
+            const d = p.devEngines && p.devEngines.packageManager;
+            if (!d || d.name !== "pnpm" || d.onFail !== "error") { console.log("::error::devEngines.packageManager must require pnpm with onFail error"); process.exit(1); }
+          ' || fail=1
+          exit $fail
+
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1 (reads packageManager)
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+
+      - name: Install with the lockfile and the build approvals
+        run: pnpm install --frozen-lockfile

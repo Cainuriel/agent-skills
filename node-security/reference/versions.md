@@ -27,6 +27,8 @@ Tests done on 2026-11-19 with Node.js 22.23.5.
 | `allowBuilds` key for a `file:` dependency | pnpm 12.21.0 | Needs the full specifier, for example `"name@file:../path": true`. A name-only key has no effect. |
 | Hardened `pnpm-workspace.yaml` template | pnpm 12.21.0 | Accepted, no unknown-key warning |
 | Hardened `.npmrc` template (`min-release-age`, `allow-git`, `allow-remote`) | npm 12.2.3 | Accepted |
+| A dependency `postinstall` script without approval | npm 12.2.3 | Blocked, with a warning |
+| `npm install-scripts approve <package>` | npm 12.2.3 | Writes a pinned entry (`esbuild@0.25.0: true`) in `allowScripts` of `package.json`. `npm approve-scripts` is an older alias. |
 
 ## Old patterns
 

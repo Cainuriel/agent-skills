@@ -68,10 +68,10 @@ node-security progress:
 **Step 1. Detect.** Run exactly this command from the root of the target repository:
 
 ```
-node <skill-dir>/scripts/detect.mjs
+node <skill-dir>/scripts/detect.mjs --owners <own-owners>
 ```
 
-The script prints JSON. It does not change files.
+`<own-owners>` is a comma-separated list of the GitHub or GitLab owners that are own (for example `cainuriel,my-org`). If you do not know them, ask the user one time. The script prints JSON. It does not change files. If `proposal.scenario` is `ask-ownership`, ask the user and run the command again.
 
 **Step 2. Propose scenario.** Use the script output and this table:
 
@@ -84,7 +84,7 @@ The script prints JSON. It does not change files.
 | Foreign repository, or owner unknown | `foreign` |
 | User asks to configure the computer | `machine` |
 
-If you do not know the owners that are "own", ask the user one time. Tell the user the scenario and the reason.
+The script output contains `proposal.scenario` and `proposal.reason`. Tell the user the scenario and the reason.
 
 **Step 3. Get approval.** The user can accept the scenario or select a different scenario.
 

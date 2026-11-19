@@ -1,0 +1,26 @@
+# Supply-chain hardening - node-security protocol 0.1.0
+# Do not lower these values without a reason recorded in the pull request.
+
+# Minimum age of a package version before pnpm installs it, in minutes.
+# 4320 = 3 days. Most compromised versions are detected and removed within hours or a few days.
+# Use 10080 (7 days) for high-security projects. The protocol minimum is 1440 (1 day).
+minimumReleaseAge: 4320
+
+# Packages exempt from minimumReleaseAge. Each entry needs a reason in the pull request.
+# An exemption for your own scope is an entry point if a maintainer account is stolen.
+minimumReleaseAgeExclude: []
+
+# Transitive dependencies resolve only from the registry, not from git or tarball URLs.
+# Default in pnpm 11+. Kept explicit for audits.
+blockExoticSubdeps: true
+
+# Install fails if a dependency has a build script that is not approved.
+# Default in pnpm 11+. Kept explicit for audits.
+strictDepBuilds: true
+
+# Refuse a version whose trust signals (trusted publisher, provenance) are weaker than earlier versions.
+trustPolicy: no-downgrade
+
+# Build approvals: one entry per reviewed package. Example: esbuild: true
+# For a file: dependency, the key must be the full specifier: "name@file:../path": true
+allowBuilds: {}
