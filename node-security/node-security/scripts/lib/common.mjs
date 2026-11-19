@@ -22,7 +22,7 @@ export const FOREIGN_LOCKFILES = ['package-lock.json', 'npm-shrinkwrap.json', 'y
 
 // Agent files: instructions that agents load automatically. The protocol never writes them.
 const AGENT_FILE_NAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', 'copilot-instructions.md']);
-const AGENT_DIR_NAMES = new Set(['.claude', '.agents', '.cursor', '.codex', '.gemini', '.kimi-code', '.windsurf']);
+const AGENT_DIR_NAMES = new Set(['.claude', '.agents', '.cursor', '.codex', '.gemini', '.kimi-code', '.windsurf', '.clinerules', '.roo', '.kiro', '.continue', '.junie']);
 
 export function isAgentPath(relPath) {
   const parts = toPosix(relPath).split('/').filter(Boolean);
