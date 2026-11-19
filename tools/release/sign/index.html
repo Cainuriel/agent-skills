@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agent-skills release signing</title>
+  <link rel="stylesheet" href="/sign.css">
+</head>
+<body>
+  <main>
+    <h1>agent-skills release signing</h1>
+    <p class="note">Local page. No network connection. Signature algorithm: EIP-191 (personal_sign).</p>
+
+    <section>
+      <h2>1. Message</h2>
+      <p>Paste the message from <code>node tools/release/release.mjs message &lt;skill&gt;</code>, or an annulment statement.</p>
+      <textarea id="message" rows="3" spellcheck="false" autocomplete="off"></textarea>
+      <p id="format" class="status"></p>
+      <p class="small">Length: <span id="length">0</span> bytes</p>
+    </section>
+
+    <section>
+      <h2>2. Account</h2>
+      <button id="connect" type="button">Connect wallet</button>
+      <p>Signing address: <code id="account">not connected</code></p>
+      <p class="small">Use the dedicated signing account of the hardware wallet, not an account with funds.</p>
+    </section>
+
+    <section>
+      <h2>3. Sign</h2>
+      <p class="warning">Before you confirm, compare the message on the hardware wallet screen with the message above, character by character. If it is different, reject it.</p>
+      <button id="sign" type="button" disabled>Sign message</button>
+      <p id="signStatus" class="status"></p>
+    </section>
+
+    <section>
+      <h2>4. Result</h2>
+      <p>Copy this block into the annotated tag message and into the release notes.</p>
+      <textarea id="result" rows="6" readonly spellcheck="false"></textarea>
+      <button id="copy" type="button" disabled>Copy result</button>
+    </section>
+  </main>
+  <script src="/sign.js"></script>
+</body>
+</html>
