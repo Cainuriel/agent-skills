@@ -2,7 +2,7 @@
 
 Supply-chain security protocol for Node.js and JavaScript repositories, packaged as an [Agent Skill](https://agentskills.io).
 
-Version 0.1.2. Status: draft, not signed. Last review of version data: 2026-11-20.
+Version 0.1.3. Status: draft, not signed. Last review of version data: 2026-11-20.
 
 ## Why
 

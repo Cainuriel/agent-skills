@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const PROTOCOL_VERSION = '0.1.2';
+export const PROTOCOL_VERSION = '0.1.3';
 
 // Minimum release age accepted by the protocol, in minutes.
 // 1440 (one day) is the pnpm 11+ default; most compromised versions are removed within hours.
@@ -369,7 +369,8 @@ export function isRegistryOrAuthKey(key) {
 const REFERENCE_EXTENSIONS = new Set(['.md', '.mdx', '.txt', '.json', '.jsonc', '.yml', '.yaml', '.sh', '.ps1', '.cmd', '.bat', '.toml']);
 const REFERENCE_NAMES = new Set(['Dockerfile', 'Makefile', 'Procfile', '.gitlab-ci.yml']);
 const REFERENCE_SKIP = new Set(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'pnpm-workspace.yaml', 'node-security.yml']);
-const NPM_COMMAND_RE = /(^|[^\w-])(npx\s+[@\w]|npm\s+(ci|install|i|run|run-script|exec|start|test|update|uninstall|add)\b)/;
+// npx as a command ("npx -y pkg", "npx pkg") or as a JSON or YAML value ("command": "npx"). npm with a subcommand.
+const NPM_COMMAND_RE = /(^|[^\w-])(npx(\s|["'`,]|$)|npm\s+(ci|install|i|run|run-script|exec|start|test|update|uninstall|add)\b)/;
 export function findNpmReferences(root, { max = 200 } = {}) {
   const out = [];
   walk(root, {

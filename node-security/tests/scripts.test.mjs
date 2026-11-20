@@ -508,6 +508,17 @@ test('npm references: pnpm commands and plain words do not match', () => {
   assert.deepEqual(out.facts.npmReferences, []);
 });
 
+test('npm references: npx as a JSON value and with flags', () => {
+  const dir = fixture({
+    'package.json': pnpmPkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': template,
+    '.vscode/mcp.json': '{\n  "servers": {\n    "angular-cli": {\n      "command": "npx",\n      "args": ["-y", "@angular/cli", "mcp"]\n    }\n  }\n}\n',
+    'docs/b.md': 'Run npx -y @progress/kendo-cli activate\nThe tool pnpx is old.\n',
+    '.git/config': gitConfig('https://github.com/me/a.git'),
+  });
+  const out = JSON.parse(run('detect.mjs', [dir, '--owners', 'me']).stdout);
+  assert.deepEqual(out.facts.npmReferences.map((r) => `${r.file}:${r.line}`).sort(), ['.vscode/mcp.json:4', 'docs/b.md:1']);
+});
+
 test('lock-diff: direct and transitive changes, read-only', () => {
   const oldLock = { lockfileVersion: 3, packages: { '': { name: 'app' }, 'node_modules/a': { version: '1.0.0' }, 'node_modules/@s/b': { version: '1.9.0' }, 'node_modules/old': { version: '0.1.0' } } };
   const dir = fixture({ 'package.json': agePkg, 'pnpm-lock.yaml': pnpmLock });

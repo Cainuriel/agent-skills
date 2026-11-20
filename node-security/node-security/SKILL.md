@@ -2,13 +2,13 @@
 name: node-security
 description: Applies a supply-chain security protocol to Node.js and JavaScript repositories. Uses pnpm by default, hardened npm only as a documented exception, and read-first inspection for foreign repositories. Use when creating, migrating, auditing or cloning a Node.js repository, when installing or updating dependencies, or before running npx, npm exec or pnpm dlx. Not for other development tasks.
 metadata:
-  version: "0.1.2"
+  version: "0.1.3"
   last_reviewed: "2026-11-20"
 ---
 
 # node-security
 
-Protocol version 0.1.2. Status: draft, not signed.
+Protocol version 0.1.3. Status: draft, not signed.
 
 ## Glossary
 
