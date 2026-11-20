@@ -14,7 +14,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const hasGit = spawnSync('git', ['--version']).status === 0;
 
 // Cases whose checks are post-conditions of a correct agent run: they fail before the run.
-const FAIL_AT_BASELINE = new Set(['new-01', 'mig-02', 'mig-04', 'npm-01']);
+const FAIL_AT_BASELINE = new Set(['new-01', 'mig-02', 'mig-04', 'mig-05', 'npm-01']);
 
 const { cases } = loadCases();
 

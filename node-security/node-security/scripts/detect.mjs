@@ -5,7 +5,8 @@
 
 import path from 'node:path';
 import {
-  PROTOCOL_VERSION, exists, readJsonSafe, readGitRemote, lockfilesAtRoot, parseArgs,
+  PROTOCOL_VERSION, MIN_PNPM_MAJOR, MIN_NPM_AGE_CONTROL, exists, compareSemver, readJsonSafe, readGitRemote, lockfilesAtRoot, parseArgs,
+  semverMajor, toolVersion,
 } from './lib/common.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -58,6 +59,28 @@ if (pkg.missing) {
   reason = 'Own repository with package.json and no lockfile.';
 }
 
+// Tools on this computer. Read-only: each runs "<tool> --version".
+const tools = {
+  node: process.versions.node,
+  pnpm: toolVersion('pnpm'),
+  npm: toolVersion('npm'),
+  corepack: toolVersion('corepack'),
+};
+const preconditions = [];
+if (scenario !== 'foreign' && scenario !== 'ask-ownership') {
+  if (!tools.pnpm) {
+    preconditions.push('pnpm is not installed. Do the step "Install pnpm" in reference/machine.md before the scenario.');
+  } else if ((semverMajor(tools.pnpm) ?? 0) < MIN_PNPM_MAJOR) {
+    preconditions.push(`pnpm ${tools.pnpm} is earlier than ${MIN_PNPM_MAJOR}. Do the step "Install pnpm" in reference/machine.md.`);
+  }
+}
+
+// npm before MIN_NPM_AGE_CONTROL ignores min-release-age (verified: 10.x without a warning).
+const npmAgeControl = tools.npm ? compareSemver(tools.npm, MIN_NPM_AGE_CONTROL) >= 0 : false;
+if (tools.npm && !npmAgeControl) {
+  preconditions.push(`npm ${tools.npm} ignores min-release-age (it needs npm ${MIN_NPM_AGE_CONTROL} or later). npx, npm exec and npm install have no release-age control on this computer. See reference/machine.md.`);
+}
+
 const result = {
   protocolVersion: PROTOCOL_VERSION,
   path: root,
@@ -73,8 +96,11 @@ const result = {
     gitRemote: remote.url,
     remoteOwner: remote.owner,
     ownership,
+    usesGithubActions: exists(path.join(root, '.github', 'workflows')),
+    tools,
+    npmAgeControl,
   },
-  proposal: { scenario, reason },
+  proposal: { scenario, reason, preconditions },
 };
 
 console.log(JSON.stringify(result, null, 2));

@@ -102,6 +102,36 @@ export function fixtureDefinitions(skillDir) {
       git: { remote: OWN_REMOTE },
     },
 
+    // minimumReleaseAge of 10 years: every lockfile entry is blocked, without a dependency on today's registry.
+    'own-pnpm-age-block': {
+      files: {
+        'package.json': pnpmPkg,
+        'pnpm-lock.yaml': pnpmLock,
+        'pnpm-workspace.yaml': ws.replace('minimumReleaseAge: 4320', 'minimumReleaseAge: 5256000'),
+        'index.js': index,
+      },
+      git: { remote: OWN_REMOTE },
+    },
+
+    'own-pnpm-cli': {
+      files: {
+        'package.json': { ...pnpmPkg, devDependencies: { '@angular/cli': '^21.2.0' } },
+        'pnpm-workspace.yaml': ws,
+        'index.js': index,
+      },
+      git: { remote: OWN_REMOTE },
+    },
+
+    'own-npm-npmrc': {
+      files: {
+        'package.json': npmPkg,
+        'package-lock.json': npmLock,
+        '.npmrc': 'registry=https://registry.npmjs.org/\nlegacy-peer-deps=true\nengine-strict=true\n',
+        'index.js': index,
+      },
+      git: { remote: OWN_REMOTE },
+    },
+
     'foreign-trap': {
       files: {
         'package.json': {

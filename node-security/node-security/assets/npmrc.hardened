@@ -1,9 +1,13 @@
-# Supply-chain hardening - node-security protocol 0.1.0 (npm 12 or later)
+# Supply-chain hardening - node-security protocol 0.1.1 (npm 12 or later)
 # Do not add ignore-scripts=true: in npm 12 it overrides allowScripts and stops project scripts.
 # Do not add authentication tokens to a project .npmrc.
 
 # Minimum age of a package version before npm installs it, in days (npm counts days, pnpm counts minutes).
+# npm earlier than 11.10.0 ignores this setting without an error. npm 12 or later is necessary for this file.
 min-release-age=3
+
+# Release-age exceptions: min-release-age-exclude[]=<name>. Package names only, no patterns.
+# npm does not accept versions: an exception covers all versions of the package. Remove it when it expires.
 
 # Do not resolve dependencies (direct or transitive) from git repositories.
 allow-git=none

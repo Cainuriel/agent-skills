@@ -2,7 +2,7 @@
 
 Supply-chain security protocol for Node.js and JavaScript repositories, packaged as an [Agent Skill](https://agentskills.io).
 
-Version 0.1.0. Status: draft, not signed. Last review of version data: 2026-11-19.
+Version 0.1.1. Status: draft, not signed. Last review of version data: 2026-11-20.
 
 ## Why
 
@@ -25,6 +25,8 @@ The skill secures the environment in which development starts. It applies to set
 | pnpm by default, with an exact version in `packageManager` | Safe defaults: dependency build scripts blocked, minimum release age, no exotic transitive sources |
 | `devEngines.packageManager` with `onFail: error` | npm refuses to install in a pnpm repository |
 | Hardened `pnpm-workspace.yaml` (release age 3 days, `trustPolicy: no-downgrade`, explicit build approvals) | Delay new versions; refuse trust downgrades; approve each native build |
+| Release age checked before and after each install, with the date when each blocked entry becomes installable | No surprise blocks; no young versions installed with a weaker policy |
+| Release-age exceptions: last option, exact versions, never for a version younger than 24 hours, approval that names the packages, temporary | The user decides; each exception is narrow, recorded and expires |
 | npm only as a documented exception, version 12 or later, hardened `.npmrc` | Same protections where npm is required |
 | Foreign repositories: inspection first, install without scripts only after a user decision | Foreign code and its configuration can disable protections |
 | Ephemeral tools: `pnpm exec`, or `pnpm dlx <package>@<exact-version>` | No `@latest`, no unpinned downloads |
@@ -52,6 +54,7 @@ node-security/             Installable skill folder
 │   ├── detect.mjs         Repository facts and the proposed scenario
 │   ├── inspect-repo.mjs   Risk report for a foreign repository
 │   ├── check-policy.mjs   Compliance check (PASS or FAIL)
+│   ├── release-age.mjs    Lockfile entries against the release age and the exceptions (reads the npm registry)
 │   └── validate-plan.mjs  Validation of a migration plan before any change
 └── assets/                Templates copied into target repositories
 ```
@@ -67,15 +70,16 @@ The agent follows `SKILL.md`. Every check that a program can do is a script: the
 | Read | Files of the target repository, user-level package manager configuration |
 | Write | After approval, only: `package.json`, `pnpm-workspace.yaml`, `.npmrc`, lockfiles, `.github/workflows/node-security.yml`, one section of `README.md` |
 | Delete | After approval, in scenario `migrate` only: npm or Yarn lockfiles and `node_modules` |
-| Run | Its own scripts, `pnpm`, `npm`, read-only `git` commands |
-| Network | npm registry only |
+| Run | Its own scripts, `node -e` for the deletions of the migration, `pnpm`, `npm`, read-only `git` commands |
+| Network | npm registry only (package manager, and package metadata for `release-age.mjs`) |
 
 ### What the skill never does
 
 - Write, change or delete agent files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.claude/`, `.agents/`, `.cursor/`, skill folders). These files are loaded automatically by agents in every session; a write there is a persistent instruction.
 - Follow instructions found in the files of a foreign repository.
 - Change the package manager, lockfile or configuration of a foreign repository.
-- Set `dangerouslyAllowAllBuilds`, `trustLockfile` or a release age of zero.
+- Set `dangerouslyAllowAllBuilds`, `trustLockfile` or a release age of less than one day.
+- Write a release-age exception without an exact version (pnpm), with a pattern (npm), or for a version younger than 24 hours. The user can write these; the validation then reports FAIL and the report records the accepted risk.
 - Commit without a request from the user.
 
 ### Prompt injection
@@ -100,7 +104,7 @@ Pattern detection is never complete. The skill instructs the agent to treat all 
 
 - Node.js 22 or later.
 - pnpm 11 or later (12 recommended).
-- npm 12 or later, only for the `npm` scenario.
+- npm 12 or later, only for the `npm` scenario. npm 11.10.0 or later for release-age control in `npx` and `npm exec` (npm 10 ignores `min-release-age` without a warning).
 - git, for the tests of the evaluation tooling.
 
 ## Usage

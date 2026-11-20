@@ -7,8 +7,8 @@
 import path from 'node:path';
 import {
   PROTOCOL_VERSION, MIN_RELEASE_AGE_MINUTES, MIN_PNPM_MAJOR, MIN_NPM_MAJOR, FOREIGN_LOCKFILES,
-  NPM_REGISTRY_HOSTS, exists, readTextSafe, readJsonSafe, parseNpmrc, parseSimpleYaml, walk,
-  parseArgs, semverMajor, isExactSemver, printTable,
+  NPM_REGISTRY_HOSTS, exists, readTextSafe, readJsonSafe, parseNpmrc, npmrcList, parseSimpleYaml, walk,
+  parseArgs, semverMajor, isExactSemver, parseExactExclusion, printTable,
 } from './lib/common.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -81,8 +81,12 @@ if (mode === 'pnpm') {
     else if (ws.strictDepBuilds === undefined) warn('STRICT_BUILDS', 'strictDepBuilds is not set (pnpm default true)', 'Set it explicitly for audits.');
     if (ws.dangerouslyAllowAllBuilds === true) fail('ALL_BUILDS', 'dangerouslyAllowAllBuilds: true', 'Remove it. Approve builds one by one.');
     if (ws.trustLockfile === true) fail('TRUST_LOCKFILE', 'trustLockfile: true', 'Remove it. pnpm must check the lockfile against the policy.');
-    const excl = ws.minimumReleaseAgeExclude;
-    if (Array.isArray(excl) && excl.length) warn('RELEASE_AGE_EXCLUDE', excl.join(', '), 'Each exclusion needs a reason in the pull request. An exclusion of your own scope is an entry point if an account is stolen.');
+    // Release-age exceptions: exact versions only. A name or a pattern also covers future versions.
+    const excl = Array.isArray(ws.minimumReleaseAgeExclude) ? ws.minimumReleaseAgeExclude.map(String) : [];
+    const patterns = excl.filter((e) => !parseExactExclusion(e));
+    const exact = excl.filter((e) => parseExactExclusion(e));
+    if (patterns.length) fail('EXCEPTION_PATTERN', patterns.join(', '), 'Use exact versions: <name>@<version>. See "Release-age exceptions" in SKILL.md.');
+    if (exact.length) warn('EXCEPTION', exact.join(', '), 'Temporary exceptions. Run release-age.mjs to find expired exceptions (STALE_EXCLUDE) and remove them.');
     if (ws.allowBuilds && typeof ws.allowBuilds === 'object') {
       const allowed = Object.entries(ws.allowBuilds).filter(([, v]) => v === true).map(([k]) => k);
       if (allowed.length) info('ALLOWED_BUILDS', allowed.join(', '));
@@ -115,6 +119,11 @@ if (mode === 'pnpm') {
     if (!(days >= 1)) fail('RELEASE_AGE', `min-release-age=${npmrc['min-release-age'] ?? '(not set)'}`, 'Set min-release-age to 1 or more (days).');
     if (npmrc['allow-git'] !== 'none') fail('ALLOW_GIT', `allow-git=${npmrc['allow-git'] ?? '(not set)'}`, 'Set allow-git=none.');
     if (npmrc['allow-remote'] !== 'none') fail('ALLOW_REMOTE', `allow-remote=${npmrc['allow-remote'] ?? '(not set)'}`, 'Set allow-remote=none.');
+    const npmExcl = npmrcList(npmrcText, 'min-release-age-exclude');
+    const globs = npmExcl.filter((e) => /[*?[\]{}]/.test(e));
+    if (globs.length) fail('EXCEPTION_PATTERN', globs.join(', '), 'Use package names only. A pattern covers many packages.');
+    const names = npmExcl.filter((e) => !/[*?[\]{}]/.test(e));
+    if (names.length) warn('EXCEPTION', names.join(', '), 'npm exceptions cover all versions of the package. Run release-age.mjs to find expired exceptions (STALE_EXCLUDE) and remove them.');
     if (npmrc['ignore-scripts'] === 'true') fail('IGNORE_SCRIPTS', 'ignore-scripts=true', 'Remove it. In npm 12 it overrides the approval list and stops project scripts.');
   }
   const approvals = p.allowScripts ?? p.npm?.allowScripts;

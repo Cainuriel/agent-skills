@@ -27,7 +27,8 @@ const fail = (id, detail) => results.push({ level: 'FAIL', id, detail });
 const warn = (id, detail) => results.push({ level: 'WARN', id, detail });
 
 const SOURCE_LOCKFILES = ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock'];
-const DELETABLE = new Set([...SOURCE_LOCKFILES, 'node_modules']);
+const DELETABLE = new Set([...SOURCE_LOCKFILES, 'node_modules', '.npmrc']);
+const RELEASE_AGE_OPTIONS = ['none', 'wait', 'resolve-again', 'exception'];
 const CREATABLE = new Set(['pnpm-workspace.yaml', 'pnpm-lock.yaml', '.github/workflows/node-security.yml']);
 const EDITABLE_NAMES = new Set(['package.json', 'README.md', 'angular.json', 'Dockerfile', '.gitignore']);
 
@@ -63,6 +64,12 @@ if (plan.error) {
     else if (semverMajor(v.pnpmVersion) < MIN_PNPM_MAJOR) fail('PNPM_VERSION', `Earlier than pnpm ${MIN_PNPM_MAJOR}: ${v.pnpmVersion}`);
   }
 
+  if (v.releaseAgeOption === undefined) warn('RELEASE_AGE_OPTION', '"releaseAgeOption" is missing. Run release-age.mjs and record the option.');
+  else if (!RELEASE_AGE_OPTIONS.includes(v.releaseAgeOption)) fail('RELEASE_AGE_OPTION', `Not one of ${RELEASE_AGE_OPTIONS.join(', ')}: ${v.releaseAgeOption}`);
+  if (exists(path.join(root, '.npmrc')) && !(Array.isArray(v.npmrcTranslation) && v.npmrcTranslation.length)) {
+    warn('NPMRC_TRANSLATION', 'The repository has .npmrc and "npmrcTranslation" is empty. Translate each line (reference/migrate.md).');
+  }
+
   const referencedFiles = new Set();
   for (const ref of Array.isArray(v.npmReferences) ? v.npmReferences : []) {
     const file = String(ref).replace(/:\d+$/, '');
@@ -71,11 +78,14 @@ if (plan.error) {
   }
   for (const rel of Array.isArray(v.deleteFiles) ? v.deleteFiles : []) {
     const posix = checkPath('deleteFiles', rel);
-    if (posix && !DELETABLE.has(path.posix.basename(posix))) fail('DELETE', `Only lockfiles and node_modules can be deleted: "${rel}"`);
+    if (posix && !DELETABLE.has(path.posix.basename(posix))) fail('DELETE', `Only lockfiles, node_modules and an empty .npmrc can be deleted: "${rel}"`);
   }
   for (const rel of Array.isArray(v.createFiles) ? v.createFiles : []) {
     const posix = checkPath('createFiles', rel);
     if (posix && !CREATABLE.has(posix)) fail('CREATE', `File not permitted: "${rel}"`);
+    if (posix === '.github/workflows/node-security.yml' && !exists(path.join(root, '.github', 'workflows'))) {
+      warn('CI_WORKFLOW', 'The repository does not use GitHub Actions. Create the workflow only if the user approves it.');
+    }
   }
   for (const rel of Array.isArray(v.editFiles) ? v.editFiles : []) {
     const posix = checkPath('editFiles', rel);

@@ -43,6 +43,8 @@ The user's computer is the only environment. There is no container and no virtua
    - Low trust, other: recommend inspection only. Install only if the user accepts the residual risk.
    - Medium trust: install is possible with steps 5 and 6.
    - If `.npmrc` or `pnpm-workspace.yaml` of the repository reduces protections or changes the registry, set the trust to low.
+   - Before an install, run `node <skill-dir>/scripts/release-age.mjs --min-age 4320`. If the result is FAIL, tell the user the blocked entries and `allEligibleAt`. Recommend to wait until that time. Do not add exceptions: this scenario does not change the configuration of the repository.
+   - If the repository uses npm and `detect.mjs` gives `npmAgeControl: false`, tell the user: npm does not apply the release age on this computer. The result of `release-age.mjs` is the only release-age control.
 5. **Install without scripts.** Use the package manager of the repository. Use its lockfile.
 
    | Lockfile | Command |

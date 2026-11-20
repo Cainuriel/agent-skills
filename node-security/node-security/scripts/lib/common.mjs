@@ -3,12 +3,23 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-export const PROTOCOL_VERSION = '0.1.0';
+export const PROTOCOL_VERSION = '0.1.1';
 
 // Minimum release age accepted by the protocol, in minutes.
 // 1440 (one day) is the pnpm 11+ default; most compromised versions are removed within hours.
 export const MIN_RELEASE_AGE_MINUTES = 1440;
+
+// Release age of the protocol policy, in minutes (3 days). The templates use this value.
+export const POLICY_RELEASE_AGE_MINUTES = 4320;
+
+// Minimum age of a version that a release-age exception can cover, in minutes.
+// An exception never covers a version that is younger than one day.
+export const MIN_EXCEPTION_AGE_MINUTES = 1440;
+
+// First npm version that applies min-release-age. Earlier versions ignore it (10.x without a warning).
+export const MIN_NPM_AGE_CONTROL = '11.10.0';
 
 // Oldest pnpm major with supply-chain defaults on (minimumReleaseAge, blockExoticSubdeps, strictDepBuilds).
 export const MIN_PNPM_MAJOR = 11;
@@ -85,6 +96,41 @@ export function parseNpmrc(text) {
     out[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
   }
   return out;
+}
+
+// All values of a repeated .npmrc key, for example "min-release-age-exclude[]=name".
+export function npmrcList(text, key) {
+  const out = [];
+  if (!text) return out;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith(';') || line.startsWith('#')) continue;
+    const idx = line.indexOf('=');
+    if (idx === -1) continue;
+    const k = line.slice(0, idx).trim();
+    if (k === key || k === `${key}[]`) out.push(line.slice(idx + 1).trim());
+  }
+  return out;
+}
+
+// Compares two semver versions (major.minor.patch only). Returns -1, 0 or 1.
+export function compareSemver(a, b) {
+  const pa = String(a).split(/[.+-]/).slice(0, 3).map(Number);
+  const pb = String(b).split(/[.+-]/).slice(0, 3).map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0) ? -1 : 1;
+  }
+  return 0;
+}
+
+// A pnpm minimumReleaseAgeExclude entry with exact versions: "name@1.2.3" or "name@1.2.3 || 1.2.4".
+// Returns { name, versions } or null for a name, a pattern or a range.
+export function parseExactExclusion(entry) {
+  const m = String(entry).trim().match(/^(@?[^@\s*?[\]{}]+)@(.+)$/);
+  if (!m) return null;
+  const versions = m[2].split('||').map((v) => v.trim());
+  if (!versions.length || !versions.every((v) => /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(v))) return null;
+  return { name: m[1], versions };
 }
 
 function stripComment(line) {
@@ -253,4 +299,40 @@ export function printTable(rawRows, columns) {
   console.log(line(columns));
   console.log(widths.map((w) => '-'.repeat(w)).join('  '));
   for (const r of rows) console.log(line(columns.map((c) => r[c])));
+}
+
+// Version of a command-line tool, or null if it is not available. Read-only: runs "<tool> --version".
+// On Windows, pnpm, npm and corepack are .cmd shims, so the shell is necessary. Arguments are fixed.
+export function toolVersion(tool) {
+  try {
+    const r = spawnSync(tool, ['--version'], { encoding: 'utf8', shell: process.platform === 'win32', timeout: 15000 });
+    if (r.status !== 0) return null;
+    const m = String(r.stdout).trim().match(/v?(\d+\.\d+\.\d+\S*)/);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+// Package versions in a lockfile: [{ name, version }], unique, sorted.
+export function lockfileEntries(root) {
+  const seen = new Map();
+  const add = (name, version) => {
+    if (name && /^\d+\.\d+\.\d+/.test(version ?? '')) seen.set(`${name}@${version}`, { name, version });
+  };
+  const pnpmText = readTextSafe(path.join(root, 'pnpm-lock.yaml'));
+  if (pnpmText) {
+    const section = pnpmText.split(/\r?\npackages:\r?\n/)[1]?.split(/\r?\nsnapshots:\r?\n/)[0] ?? '';
+    for (const m of section.matchAll(/^ {2}'?(@?[^@\s'][^@\s']*)@([^:'\s(]+)'?:/gm)) add(m[1], m[2]);
+    return { lockfile: 'pnpm-lock.yaml', entries: [...seen.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+  }
+  const npmLock = readJsonSafe(path.join(root, 'package-lock.json')).value;
+  if (npmLock?.packages) {
+    for (const [key, info] of Object.entries(npmLock.packages)) {
+      if (!key.startsWith('node_modules/') || info.link) continue;
+      add(info.name ?? key.split('node_modules/').pop(), info.version);
+    }
+    return { lockfile: 'package-lock.json', entries: [...seen.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+  }
+  return { lockfile: null, entries: [] };
 }

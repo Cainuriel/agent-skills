@@ -1,4 +1,4 @@
-// Unit tests for node-security scripts. Run: node --test tests/
+// Unit tests for node-security scripts. Run: node --test tests/scripts.test.mjs tests/evals.test.mjs
 // Fixtures are generated at runtime in the system temporary directory. They are not committed:
 // trap fixtures contain agent files with injected instructions and editor auto-run tasks, and
 // these must never exist in this repository, where agents and editors could load them.
@@ -286,4 +286,169 @@ test('workflow: policy step fails on a weakened repository', { skip: !hasBash &&
   for (const msg of ['Forbidden lockfile', 'Forbidden pnpm setting', 'minimumReleaseAge must be 1440']) {
     assert.ok(r.stdout.includes(msg), `missing "${msg}": ${r.stdout}`);
   }
+});
+
+// ---------- release-age.mjs (offline: --times-file and --now) ----------
+
+const NOW = '2026-11-20T12:00:00.000Z';
+const pnpmLock = `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      a:
+        specifier: 1.0.0
+        version: 1.0.0
+
+packages:
+
+  a@1.0.0:
+    resolution: {integrity: sha512-a}
+
+  '@s/b@2.0.0':
+    resolution: {integrity: sha512-b}
+
+  c@3.0.0:
+    resolution: {integrity: sha512-c}
+
+snapshots:
+
+  a@1.0.0: {}
+`;
+// a: 48 hours old (blocked, an exception is possible). @s/b: 12 hours old (blocked, no exception). c: old.
+const times = { 'a@1.0.0': '2026-11-18T12:00:00.000Z', '@s/b@2.0.0': '2026-11-20T00:00:00.000Z', 'c@3.0.0': '2026-11-01T00:00:00.000Z' };
+const timesFile = path.join(fixture({}), 'times.json');
+fs.writeFileSync(timesFile, JSON.stringify(times));
+const agePkg = { ...pnpmPkg, dependencies: { a: '1.0.0', '@s/b': '^2.0.0', c: '^3.0.0' } };
+const withExclude = (entries) => template.replace('minimumReleaseAgeExclude: []', `minimumReleaseAgeExclude:\n${entries.map((e) => `  - '${e}'`).join('\n')}`);
+const ageRun = (dir, extra = []) => runJson('release-age.mjs', [dir, '--times-file', timesFile, '--now', NOW, ...extra]);
+const ids = (json) => json.findings.map((f) => f.id);
+
+test('release-age: blocked entries, dates and exception candidates', () => {
+  const dir = fixture({ 'package.json': agePkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': template });
+  const before = snapshot(dir);
+  const r = ageRun(dir);
+  assert.equal(r.code, 1);
+  assert.equal(r.json.minimumReleaseAgeMinutes, 4320);
+  assert.equal(r.json.entries, 3);
+  assert.equal(r.json.blockedCount, 2);
+  assert.equal(r.json.allEligibleAt, '2026-11-23T00:00:00.000Z');
+  assert.equal(r.json.exactPinsEligibleAt, '2026-11-21T12:00:00.000Z');
+  assert.deepEqual(r.json.exceptionCandidates, ['a@1.0.0']);
+  assert.deepEqual(r.json.notExceptable, [{ package: '@s/b@2.0.0', exceptionPossibleAt: '2026-11-21T00:00:00.000Z' }]);
+  assert.ok(ids(r.json).includes('BLOCKED'));
+  assert.equal(snapshot(dir), before);
+});
+
+test('release-age: no blocked entry passes', () => {
+  const dir = fixture({ 'package.json': agePkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': template });
+  const r = ageRun(dir, ['--min-age', '600']);
+  assert.equal(r.code, 0, JSON.stringify(r.json.findings));
+  assert.equal(r.json.minimumReleaseAgeSource, 'argument');
+});
+
+test('release-age: exact exception is active and reported', () => {
+  const ws = withExclude(['a@1.0.0']).replace('minimumReleaseAge: 4320', 'minimumReleaseAge: 600');
+  const dir = fixture({ 'package.json': agePkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': ws });
+  const r = ageRun(dir, ['--min-age', '4320']);
+  assert.equal(r.json.blockedCount, 1);
+  assert.ok(ids(r.json).includes('EXCEPTION'));
+  assert.equal(r.json.excepted[0].state, 'active');
+});
+
+test('release-age: exception younger than 24 hours fails', () => {
+  const dir = fixture({ 'package.json': agePkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': withExclude(['a@1.0.0', '@s/b@2.0.0']) });
+  const r = ageRun(dir);
+  assert.equal(r.code, 1);
+  assert.equal(r.json.blockedCount, 0);
+  assert.ok(r.json.findings.some((f) => f.id === 'EXCEPTION_TOO_YOUNG' && f.detail.startsWith('@s/b@2.0.0')));
+});
+
+test('release-age: expired and unused exceptions are stale', () => {
+  const dir = fixture({ 'package.json': agePkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': withExclude(['c@3.0.0', 'z@9.9.9']) });
+  const r = ageRun(dir);
+  assert.equal(r.json.findings.filter((f) => f.id === 'STALE_EXCLUDE').length, 2);
+});
+
+test('release-age: pattern or name exception fails', () => {
+  for (const entry of ['a', '@s/*', 'a@^1.0.0']) {
+    const dir = fixture({ 'package.json': agePkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': withExclude([entry]) });
+    const r = ageRun(dir);
+    assert.equal(r.code, 1);
+    assert.ok(ids(r.json).includes('EXCEPTION_PATTERN'), entry);
+  }
+});
+
+test('release-age: npm lockfile, age from .npmrc, name exception and pattern', () => {
+  const lock = { lockfileVersion: 3, packages: { '': { name: 'app' }, 'node_modules/a': { version: '1.0.0' }, 'node_modules/@s/b': { version: '2.0.0' }, 'node_modules/c': { version: '3.0.0' } } };
+  const plain = fixture({ 'package.json': { name: 'app' }, 'package-lock.json': lock });
+  assert.equal(ageRun(plain).json.minimumReleaseAgeMinutes, 4320);
+  assert.equal(ageRun(plain).json.minimumReleaseAgeSource, 'protocol policy');
+  const dir = fixture({ 'package.json': { name: 'app' }, 'package-lock.json': lock, '.npmrc': 'min-release-age=1\nmin-release-age-exclude[]=@s/b\nmin-release-age-exclude[]=@x/*\n' });
+  const r = ageRun(dir);
+  assert.equal(r.json.minimumReleaseAgeMinutes, 1440);
+  assert.equal(r.json.blockedCount, 0);
+  assert.ok(ids(r.json).includes('EXCEPTION_TOO_YOUNG'));
+  assert.ok(ids(r.json).includes('EXCEPTION_PATTERN'));
+});
+
+test('release-age: no lockfile is a usage error', () => {
+  const r = run('release-age.mjs', [fixture({ 'package.json': { name: 'a' } })]);
+  assert.equal(r.code, 2);
+});
+
+// ---------- 0.1.1: exceptions in check-policy, plan fields, detect facts ----------
+
+test('check-policy: exact exception warns, pattern exception fails', () => {
+  const ok = fixture({ 'package.json': pnpmPkg, 'pnpm-lock.yaml': 'lockfileVersion: 9.0\n', 'pnpm-workspace.yaml': withExclude(['a@1.0.0', 'b@1.0.0 || 1.0.1']) });
+  const r1 = runJson('check-policy.mjs', [ok]);
+  assert.equal(r1.code, 0, JSON.stringify(r1.json.results));
+  assert.ok(r1.json.results.some((x) => x.id === 'EXCEPTION' && x.level === 'WARN'));
+  const bad = fixture({ 'package.json': pnpmPkg, 'pnpm-lock.yaml': 'lockfileVersion: 9.0\n', 'pnpm-workspace.yaml': withExclude(['a@1.0.0', '@s/*']) });
+  const r2 = runJson('check-policy.mjs', [bad]);
+  assert.equal(r2.code, 1);
+  assert.ok(r2.json.results.some((x) => x.id === 'EXCEPTION_PATTERN' && x.detail === '@s/*'));
+});
+
+test('check-policy: npm exception with a pattern fails', () => {
+  const pkg = { name: 'a', devEngines: { packageManager: { name: 'npm', version: '>=12.0.0', onFail: 'error' } } };
+  const dir = fixture({ 'package.json': pkg, 'package-lock.json': '{}', '.npmrc': `${npmrcTemplate}\nmin-release-age-exclude[]=left-pad\nmin-release-age-exclude[]=@x/*\n` });
+  const r = runJson('check-policy.mjs', [dir]);
+  assert.equal(r.code, 1);
+  assert.ok(r.json.results.some((x) => x.id === 'EXCEPTION_PATTERN' && x.detail === '@x/*'));
+  assert.ok(r.json.results.some((x) => x.id === 'EXCEPTION' && x.detail === 'left-pad'));
+});
+
+test('validate-plan: release-age option, .npmrc translation and workflow warnings', () => {
+  const repo = fixture({ 'package.json': { name: 'a' }, 'package-lock.json': '{}', '.npmrc': 'legacy-peer-deps=true\n' });
+  const planFile = path.join(fixture({}), 'plan.json');
+  fs.writeFileSync(planFile, JSON.stringify({ ...goodPlan, editFiles: ['package.json'], npmReferences: [], deleteFiles: ['package-lock.json', '.npmrc'] }));
+  const r = runJson('validate-plan.mjs', [planFile, '--repo', repo]);
+  assert.equal(r.code, 0, JSON.stringify(r.json.results));
+  for (const id of ['RELEASE_AGE_OPTION', 'NPMRC_TRANSLATION', 'CI_WORKFLOW']) {
+    assert.ok(r.json.results.some((x) => x.id === id && x.level === 'WARN'), id);
+  }
+  fs.writeFileSync(planFile, JSON.stringify({ ...goodPlan, editFiles: ['package.json'], npmReferences: [], releaseAgeOption: 'skip' }));
+  const r2 = runJson('validate-plan.mjs', [planFile, '--repo', repo]);
+  assert.equal(r2.code, 1);
+  assert.ok(r2.json.results.some((x) => x.id === 'RELEASE_AGE_OPTION' && x.level === 'FAIL'));
+});
+
+test('detect: reports tools, npm release-age control and preconditions', () => {
+  const dir = fixture({ 'package.json': { name: 'a' }, 'package-lock.json': '{}', '.git/config': gitConfig('https://github.com/me/a.git') });
+  const out = JSON.parse(run('detect.mjs', [dir, '--owners', 'me']).stdout);
+  assert.equal(out.facts.tools.node, process.versions.node);
+  assert.equal(typeof out.facts.npmAgeControl, 'boolean');
+  assert.equal(typeof out.facts.usesGithubActions, 'boolean');
+  assert.ok(Array.isArray(out.proposal.preconditions));
+});
+
+test('workflow: release-age exceptions need exact versions', { skip: !hasBash && 'bash not available' }, () => {
+  const good = fixture({ 'package.json': pnpmPkg, 'pnpm-lock.yaml': '', 'pnpm-workspace.yaml': withExclude(['a@1.0.0', '@s/b@2.0.0 || 2.0.1']) });
+  assert.equal(spawnSync('bash', ['-c', checkBlock], { cwd: good, encoding: 'utf8' }).status, 0);
+  const bad = fixture({ 'package.json': pnpmPkg, 'pnpm-lock.yaml': '', 'pnpm-workspace.yaml': withExclude(['a@1.0.0', '@s/*']) });
+  const r = spawnSync('bash', ['-c', checkBlock], { cwd: bad, encoding: 'utf8' });
+  assert.notEqual(r.status, 0);
+  assert.ok(r.stdout.includes('without an exact version: @s/*'), r.stdout);
 });

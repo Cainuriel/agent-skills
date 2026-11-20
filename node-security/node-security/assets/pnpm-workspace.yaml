@@ -1,4 +1,4 @@
-# Supply-chain hardening - node-security protocol 0.1.0
+# Supply-chain hardening - node-security protocol 0.1.1
 # Do not lower these values without a reason recorded in the pull request.
 
 # Minimum age of a package version before pnpm installs it, in minutes.
@@ -6,8 +6,9 @@
 # Use 10080 (7 days) for high-security projects. The protocol minimum is 1440 (1 day).
 minimumReleaseAge: 4320
 
-# Packages exempt from minimumReleaseAge. Each entry needs a reason in the pull request.
-# An exemption for your own scope is an entry point if a maintainer account is stolen.
+# Release-age exceptions. Exact versions only: <name>@<version>. A name or a pattern also covers future versions.
+# Each entry is temporary, needs a reason in the commit message, and never covers a version younger than 24 hours.
+# Run release-age.mjs of the node-security skill to find expired entries (STALE_EXCLUDE) and remove them.
 minimumReleaseAgeExclude: []
 
 # Transitive dependencies resolve only from the registry, not from git or tarball URLs.

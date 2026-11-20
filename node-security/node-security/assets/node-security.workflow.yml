@@ -1,4 +1,4 @@
-# node-security protocol 0.1.0 - CI policy check for pnpm repositories
+# node-security protocol 0.1.1 - CI policy check for pnpm repositories
 # Actions are pinned to full commit SHAs. The tag is in the comment. Update both together.
 name: node-security
 
@@ -31,6 +31,13 @@ jobs:
             age=$(sed -nE 's/^minimumReleaseAge:[[:space:]]*([0-9]+).*/\1/p' pnpm-workspace.yaml)
             if [ -n "$age" ] && [ "$age" -lt 1440 ]; then echo "::error::minimumReleaseAge must be 1440 or more"; fail=1; fi
             grep -Eq '^trustPolicy:[[:space:]]*no-downgrade' pnpm-workspace.yaml || { echo "::error::trustPolicy must be no-downgrade"; fail=1; }
+            # Release-age exceptions: exact versions only, in a block list.
+            grep -Eq '^minimumReleaseAgeExclude:[[:space:]]*\[[[:space:]]*[^][:space:]]' pnpm-workspace.yaml && { echo "::error::minimumReleaseAgeExclude must be a block list"; fail=1; }
+            exact='^@?[^@[:space:]*?]+@[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?([[:space:]]*\|\|[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)*$'
+            while IFS= read -r entry; do
+              [ -z "$entry" ] && continue
+              echo "$entry" | grep -Eq "$exact" || { echo "::error::Release-age exception without an exact version: $entry"; fail=1; }
+            done < <(awk '/^minimumReleaseAgeExclude:/{f=1;next} f&&/^[^[:space:]#]/{f=0} f&&/^[[:space:]]+-/{sub(/^[[:space:]]+-[[:space:]]*/,"");sub(/[[:space:]]+#.*$/,"");print}' pnpm-workspace.yaml | tr -d "\"'")
           fi
           node -e '
             const p = require("./package.json");

@@ -9,8 +9,9 @@ Use this scenario only when the user gives a reason to keep npm in an own reposi
 - [ ] 2. Check the npm version
 - [ ] 3. Set devEngines
 - [ ] 4. Create .npmrc
-- [ ] 5. Review install scripts
-- [ ] 6. Validate
+- [ ] 5. Release-age exceptions (only if necessary)
+- [ ] 6. Review install scripts
+- [ ] 7. Validate
 ```
 
 ## Steps
@@ -29,11 +30,12 @@ Use this scenario only when the user gives a reason to keep npm in an own reposi
 
    With this field, npm 10 and npm 11 stop in this repository (verified, see [versions.md](versions.md)).
 4. **Create .npmrc.** Copy `assets/npmrc.hardened` to `.npmrc` at the root of the repository. Keep the comments. Do not add `ignore-scripts=true`. In npm 12, `ignore-scripts` overrides the approval list and also stops the scripts of the project.
-5. **Review install scripts.** Run `npm install-scripts ls`. For each package in the list:
+5. **Release-age exceptions.** Do these only with "Release-age exceptions" in SKILL.md. In npm, an exception is a package name (`min-release-age-exclude[]=<name>`) and covers all versions of the package. Do not use patterns.
+6. **Review install scripts.** Run `npm install-scripts ls`. For each package in the list:
    1. Tell the user the package and the reason for its script.
    2. If the user approves, run `npm install-scripts approve <package>`. npm writes a pinned entry (`<package>@<version>`) in the `allowScripts` field of `package.json`. Do not use `--no-allow-scripts-pin`: a name-only approval also covers future versions.
    3. If the user does not approve, run `npm install-scripts deny <package>`.
-6. **Validate.** Do Step 5 of SKILL.md.
+7. **Validate.** Do Step 5 of SKILL.md.
 
 ## Frozen repositories
 
