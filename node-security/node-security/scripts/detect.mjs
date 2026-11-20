@@ -5,8 +5,8 @@
 
 import path from 'node:path';
 import {
-  PROTOCOL_VERSION, MIN_PNPM_MAJOR, MIN_NPM_AGE_CONTROL, exists, compareSemver, readJsonSafe, readGitRemote, lockfilesAtRoot, parseArgs,
-  semverMajor, toolVersion,
+  PROTOCOL_VERSION, MIN_PNPM_MAJOR, MIN_NPM_AGE_CONTROL, NPMRC_TRANSLATIONS, exists, compareSemver, readJsonSafe,
+  readTextSafe, parseNpmrc, readGitRemote, lockfilesAtRoot, parseArgs, semverMajor, toolVersion, findNpmReferences,
 } from './lib/common.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -34,6 +34,17 @@ if (remote.owner && owners.length > 0) {
 const hasPnpmLock = lockfiles.includes('pnpm-lock.yaml');
 const hasForeignLock = lockfiles.some((f) => f !== 'pnpm-lock.yaml');
 
+// Signs of a migration to pnpm that is not complete.
+const pendingNpmrcKeys = Object.keys(parseNpmrc(readTextSafe(path.join(root, '.npmrc'))))
+  .filter((k) => Object.hasOwn(NPMRC_TRANSLATIONS, k));
+const npmReferences = pkg.missing ? [] : findNpmReferences(root);
+const packageManager = typeof pkg.value?.packageManager === 'string' ? pkg.value.packageManager : null;
+const pendingMigration = [];
+if (pendingNpmrcKeys.length) pendingMigration.push(`.npmrc keys that pnpm ignores: ${pendingNpmrcKeys.join(', ')}`);
+if (!packageManager?.startsWith('pnpm@')) pendingMigration.push(`packageManager is ${packageManager ?? 'missing'}`);
+if (devEnginesPm?.name !== 'pnpm') pendingMigration.push('devEngines does not require pnpm');
+if (npmReferences.length) pendingMigration.push(`${npmReferences.length} npm commands in ${new Set(npmReferences.map((r) => r.file)).size} files`);
+
 let scenario;
 let reason;
 if (pkg.missing) {
@@ -51,6 +62,9 @@ if (pkg.missing) {
 } else if (hasForeignLock) {
   scenario = 'migrate';
   reason = `Own repository with ${lockfiles.filter((f) => f !== 'pnpm-lock.yaml').join(', ')}.`;
+} else if (hasPnpmLock && (pendingNpmrcKeys.length || !packageManager?.startsWith('pnpm@'))) {
+  scenario = 'migrate';
+  reason = `Migration not complete: own repository with pnpm-lock.yaml and ${pendingMigration.join('; ')}. Do "Resume a migration" in reference/migrate.md.`;
 } else if (hasPnpmLock) {
   scenario = 'audit';
   reason = 'Own repository with pnpm-lock.yaml.';
@@ -99,6 +113,8 @@ const result = {
     usesGithubActions: exists(path.join(root, '.github', 'workflows')),
     tools,
     npmAgeControl,
+    pendingMigration,
+    npmReferences,
   },
   proposal: { scenario, reason, preconditions },
 };

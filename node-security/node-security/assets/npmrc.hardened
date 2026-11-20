@@ -1,4 +1,4 @@
-# Supply-chain hardening - node-security protocol 0.1.1 (npm 12 or later)
+# Supply-chain hardening - node-security protocol 0.1.2 (npm 12 or later)
 # Do not add ignore-scripts=true: in npm 12 it overrides allowScripts and stops project scripts.
 # Do not add authentication tokens to a project .npmrc.
 

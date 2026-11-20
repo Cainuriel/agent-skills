@@ -54,6 +54,7 @@ Tests done on 2026-11-19 and 2026-11-20 with Node.js 22.23.5.
 | `allowBuilds` key for a `file:` dependency | pnpm 12.21.0 | Needs the full specifier, for example `"name@file:../path": true`. A name-only key has no effect. |
 | Hardened `pnpm-workspace.yaml` template | pnpm 12.21.0 | Accepted, no unknown-key warning |
 | `engineStrict`, `saveExact`, `strictPeerDependencies` in `pnpm-workspace.yaml` | pnpm 12.21.0 | Accepted. `engineStrict: true` stops with `ERR_PNPM_UNSUPPORTED_ENGINE`. An unknown key gives a warning. |
+| `engine-strict=true` in `.npmrc` | pnpm 11.28.12, 12.21.0 | Ignored. pnpm 12 gives only a warning for an unsupported engine; pnpm 11 gives nothing. The engine check is off until `engineStrict: true` is in `pnpm-workspace.yaml`. |
 | Hardened `.npmrc` template (`min-release-age`, `allow-git`, `allow-remote`) | npm 12.2.3 | Accepted |
 | `allow-git=none` | npm 10.9.9 ignored; 11.21.3 applied | npm 11.21.3 stops a `github:` dependency |
 | A dependency `postinstall` script without approval | npm 12.2.3 | Blocked, with a warning |

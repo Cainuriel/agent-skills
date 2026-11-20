@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const PROTOCOL_VERSION = '0.1.1';
+export const PROTOCOL_VERSION = '0.1.2';
 
 // Minimum release age accepted by the protocol, in minutes.
 // 1440 (one day) is the pnpm 11+ default; most compromised versions are removed within hours.
@@ -314,25 +314,79 @@ export function toolVersion(tool) {
   }
 }
 
-// Package versions in a lockfile: [{ name, version }], unique, sorted.
-export function lockfileEntries(root) {
+// Package versions in lockfile text: [{ name, version }], unique, sorted. kind: 'pnpm' or 'npm'.
+export function parseLockfileText(text, kind) {
   const seen = new Map();
   const add = (name, version) => {
     if (name && /^\d+\.\d+\.\d+/.test(version ?? '')) seen.set(`${name}@${version}`, { name, version });
   };
-  const pnpmText = readTextSafe(path.join(root, 'pnpm-lock.yaml'));
-  if (pnpmText) {
-    const section = pnpmText.split(/\r?\npackages:\r?\n/)[1]?.split(/\r?\nsnapshots:\r?\n/)[0] ?? '';
+  if (kind === 'pnpm') {
+    const section = text.split(/\r?\npackages:\r?\n/)[1]?.split(/\r?\nsnapshots:\r?\n/)[0] ?? '';
     for (const m of section.matchAll(/^ {2}'?(@?[^@\s'][^@\s']*)@([^:'\s(]+)'?:/gm)) add(m[1], m[2]);
-    return { lockfile: 'pnpm-lock.yaml', entries: [...seen.values()].sort((a, b) => a.name.localeCompare(b.name)) };
-  }
-  const npmLock = readJsonSafe(path.join(root, 'package-lock.json')).value;
-  if (npmLock?.packages) {
-    for (const [key, info] of Object.entries(npmLock.packages)) {
+  } else {
+    const lock = JSON.parse(text.replace(/^\uFEFF/, ''));
+    for (const [key, info] of Object.entries(lock.packages ?? {})) {
       if (!key.startsWith('node_modules/') || info.link) continue;
       add(info.name ?? key.split('node_modules/').pop(), info.version);
     }
-    return { lockfile: 'package-lock.json', entries: [...seen.values()].sort((a, b) => a.name.localeCompare(b.name)) };
+  }
+  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Lockfile of a repository: { lockfile, entries }. pnpm-lock.yaml first, then package-lock.json.
+export function lockfileEntries(root) {
+  const pnpmText = readTextSafe(path.join(root, 'pnpm-lock.yaml'));
+  if (pnpmText) return { lockfile: 'pnpm-lock.yaml', entries: parseLockfileText(pnpmText, 'pnpm') };
+  const npmText = readTextSafe(path.join(root, 'package-lock.json'));
+  if (npmText) {
+    try {
+      return { lockfile: 'package-lock.json', entries: parseLockfileText(npmText, 'npm') };
+    } catch {
+      return { lockfile: null, entries: [] };
+    }
   }
   return { lockfile: null, entries: [] };
+}
+
+// .npmrc keys that npm reads and pnpm 11+ ignores. Value: the pnpm-workspace.yaml setting, or null (remove the key).
+// Verified: pnpm 11.28.12 and 12.21.0 ignore engine-strict in .npmrc.
+export const NPMRC_TRANSLATIONS = {
+  'engine-strict': 'engineStrict',
+  'save-exact': 'saveExact',
+  'strict-peer-deps': 'strictPeerDependencies',
+  'legacy-peer-deps': null,
+  'ignore-scripts': null,
+  'min-release-age': null,
+};
+
+// .npmrc keys that stay in .npmrc in a pnpm repository: registry and authentication.
+export function isRegistryOrAuthKey(key) {
+  return key === 'registry' || /^@[^:]+:registry$/.test(key) || /^\/\/|_auth|always-auth/.test(key);
+}
+
+// npm commands in text files of the repository: [{ file, line, text, agentFile }].
+// Lockfiles, node_modules, .git and the templates of this skill are not searched.
+const REFERENCE_EXTENSIONS = new Set(['.md', '.mdx', '.txt', '.json', '.jsonc', '.yml', '.yaml', '.sh', '.ps1', '.cmd', '.bat', '.toml']);
+const REFERENCE_NAMES = new Set(['Dockerfile', 'Makefile', 'Procfile', '.gitlab-ci.yml']);
+const REFERENCE_SKIP = new Set(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'pnpm-workspace.yaml', 'node-security.yml']);
+const NPM_COMMAND_RE = /(^|[^\w-])(npx\s+[@\w]|npm\s+(ci|install|i|run|run-script|exec|start|test|update|uninstall|add)\b)/;
+export function findNpmReferences(root, { max = 200 } = {}) {
+  const out = [];
+  walk(root, {
+    maxDepth: 6,
+    onFile: (full, rel) => {
+      if (out.length >= max) return;
+      const base = path.basename(full);
+      if (REFERENCE_SKIP.has(base)) return;
+      if (!REFERENCE_EXTENSIONS.has(path.extname(base).toLowerCase()) && !REFERENCE_NAMES.has(base)) return;
+      const text = readTextSafe(full);
+      if (!text || text.length > 1_000_000) return;
+      text.split(/\r?\n/).forEach((line, i) => {
+        if (out.length < max && NPM_COMMAND_RE.test(line)) {
+          out.push({ file: rel, line: i + 1, text: line.trim().slice(0, 100), agentFile: isAgentPath(rel) });
+        }
+      });
+    },
+  });
+  return out;
 }

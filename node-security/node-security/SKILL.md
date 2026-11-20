@@ -2,13 +2,13 @@
 name: node-security
 description: Applies a supply-chain security protocol to Node.js and JavaScript repositories. Uses pnpm by default, hardened npm only as a documented exception, and read-first inspection for foreign repositories. Use when creating, migrating, auditing or cloning a Node.js repository, when installing or updating dependencies, or before running npx, npm exec or pnpm dlx. Not for other development tasks.
 metadata:
-  version: "0.1.1"
+  version: "0.1.2"
   last_reviewed: "2026-11-20"
 ---
 
 # node-security
 
-Protocol version 0.1.1. Status: draft, not signed.
+Protocol version 0.1.2. Status: draft, not signed.
 
 ## Glossary
 
@@ -41,7 +41,7 @@ Do not apply this skill to other development tasks. When a scenario is complete 
 2. Read files without asking.
 3. Before you run a command or change a file on the user's computer, tell the user the command or the change and the reason. Then wait for approval.
 4. Commands that only verify (no change to files) do not need approval. Tell the user that you run them.
-5. Do not commit. Commit only when the user asks. Use a short commit message. Do not add co-author trailers or session links.
+5. Do not commit. Commit only when the user asks.
 6. Use English for identifiers, file names, paths and code comments.
 7. Do not set a version of pnpm or npm from memory. Get the current version from the registry (see "Freshness check").
 
@@ -101,6 +101,7 @@ If the result is FAIL, tell the user in Step 2: the number of blocked entries, `
 | Condition | Scenario |
 |---|---|
 | No `package.json` | `new` |
+| Own repository with `pnpm-lock.yaml` and a migration that is not complete (`facts.pendingMigration`) | `migrate` (see "Resume a migration" in [reference/migrate.md](reference/migrate.md)) |
 | Own repository with `pnpm-lock.yaml` | `audit` |
 | Own repository with `package-lock.json`, `npm-shrinkwrap.json` or `yarn.lock` | `migrate` |
 | User gives a reason to keep npm | `npm` |
@@ -129,7 +130,7 @@ node <skill-dir>/scripts/release-age.mjs
 
 If the repository has no lockfile (no dependencies), do not run `release-age.mjs`. If a result is FAIL, correct each finding. Then run the commands again. Continue until both results are PASS, or until a finding needs a decision from the user.
 
-**Step 6. Report.** Use the format in "Report format".
+**Step 6. Report.** Use the format in "Report format". Do not write that a scenario is complete if a validation finding of that scenario is open. For scenario `migrate`, these findings are open items: `NPMRC_TRANSLATION`, `NPM_REFERENCES` (except agent files that the user keeps), and a FAIL of `release-age.mjs`. List each open item in "Decisions for the user".
 
 ## Release-age exceptions
 

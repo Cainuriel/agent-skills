@@ -1,4 +1,4 @@
-# Supply-chain hardening - node-security protocol 0.1.1
+# Supply-chain hardening - node-security protocol 0.1.2
 # Do not lower these values without a reason recorded in the pull request.
 
 # Minimum age of a package version before pnpm installs it, in minutes.

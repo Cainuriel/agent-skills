@@ -452,3 +452,74 @@ test('workflow: release-age exceptions need exact versions', { skip: !hasBash &&
   assert.notEqual(r.status, 0);
   assert.ok(r.stdout.includes('without an exact version: @s/*'), r.stdout);
 });
+
+// ---------- 0.1.2: incomplete migrations, .npmrc translation, npm references, lock-diff ----------
+
+const halfMigrated = () => fixture({
+  'package.json': pnpmPkg,
+  'pnpm-lock.yaml': pnpmLock,
+  'pnpm-workspace.yaml': template,
+  '.npmrc': 'registry=https://registry.npmjs.org/\n//registry.npmjs.org/:_authToken=${NPM_TOKEN}\nlegacy-peer-deps=true\nengine-strict=true\n',
+  'docs/kendo.md': 'Activate the license: npx kendo-ui-license activate\nThen run pnpm install.\n',
+  'AGENTS.md': 'Use npm ci in this repository.\n',
+  '.git/config': gitConfig('https://github.com/me/a.git'),
+});
+
+test('detect: pnpm repository with npm settings left is an incomplete migration', () => {
+  const out = JSON.parse(run('detect.mjs', [halfMigrated(), '--owners', 'me']).stdout);
+  assert.equal(out.proposal.scenario, 'migrate');
+  assert.match(out.proposal.reason, /Migration not complete/);
+  assert.ok(out.facts.pendingMigration.some((p) => p.includes('engine-strict')));
+  const refs = out.facts.npmReferences.map((r) => `${r.file}:${r.line}:${r.agentFile}`).sort();
+  assert.deepEqual(refs, ['AGENTS.md:1:true', 'docs/kendo.md:1:false']);
+});
+
+test('detect: pnpm repository with only npm references in docs stays audit', () => {
+  const dir = fixture({
+    'package.json': pnpmPkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': template,
+    'README.md': 'Do not run npm install here.\n', '.git/config': gitConfig('https://github.com/me/a.git'),
+  });
+  const out = JSON.parse(run('detect.mjs', [dir, '--owners', 'me']).stdout);
+  assert.equal(out.proposal.scenario, 'audit');
+  assert.equal(out.facts.npmReferences.length, 1);
+});
+
+test('check-policy: .npmrc keys that pnpm ignores fail, registry and auth pass, npm references warn', () => {
+  const r = runJson('check-policy.mjs', [halfMigrated()]);
+  assert.equal(r.code, 1);
+  const tr = r.json.results.filter((x) => x.id === 'NPMRC_TRANSLATION');
+  assert.equal(tr.length, 2);
+  assert.ok(tr.some((x) => x.fix.includes('engineStrict: true')));
+  assert.ok(!r.json.results.some((x) => x.id === 'NPMRC_SETTING'));
+  assert.ok(r.json.results.some((x) => x.id === 'NPM_REFERENCES' && x.level === 'WARN' && x.detail.includes('docs/kendo.md')));
+  const other = fixture({ 'package.json': pnpmPkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': template, '.npmrc': 'fund=false\n' });
+  const r2 = runJson('check-policy.mjs', [other]);
+  assert.equal(r2.code, 0);
+  assert.ok(r2.json.results.some((x) => x.id === 'NPMRC_SETTING' && x.level === 'WARN'));
+});
+
+test('npm references: pnpm commands and plain words do not match', () => {
+  const dir = fixture({
+    'package.json': pnpmPkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': template,
+    'docs/a.md': 'pnpm install\npnpm exec ng build\nThe npm registry is public.\nnpm-run-all is a package.\n',
+    '.git/config': gitConfig('https://github.com/me/a.git'),
+  });
+  const out = JSON.parse(run('detect.mjs', [dir, '--owners', 'me']).stdout);
+  assert.deepEqual(out.facts.npmReferences, []);
+});
+
+test('lock-diff: direct and transitive changes, read-only', () => {
+  const oldLock = { lockfileVersion: 3, packages: { '': { name: 'app' }, 'node_modules/a': { version: '1.0.0' }, 'node_modules/@s/b': { version: '1.9.0' }, 'node_modules/old': { version: '0.1.0' } } };
+  const dir = fixture({ 'package.json': agePkg, 'pnpm-lock.yaml': pnpmLock });
+  const oldFile = path.join(fixture({}), 'old-package-lock.json');
+  fs.writeFileSync(oldFile, JSON.stringify(oldLock));
+  const before = snapshot(dir);
+  const r = runJson('lock-diff.mjs', [oldFile, dir]);
+  assert.equal(r.code, 0);
+  assert.equal(r.json.directDependencies, 3);
+  assert.equal(r.json.directUnchanged, 1);
+  assert.deepEqual(r.json.directChanged, [{ package: '@s/b', before: '1.9.0', after: '2.0.0' }, { package: 'c', before: '-', after: '3.0.0' }]);
+  assert.deepEqual(r.json.transitiveRemoved, ['old@0.1.0']);
+  assert.equal(snapshot(dir), before);
+  assert.equal(run('lock-diff.mjs', [path.join(dir, 'missing.json'), dir]).code, 2);
+});

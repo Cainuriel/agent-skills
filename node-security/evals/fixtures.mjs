@@ -122,6 +122,19 @@ export function fixtureDefinitions(skillDir) {
       git: { remote: OWN_REMOTE },
     },
 
+    // A migration that stopped after the lockfile import: npm settings and npm commands are left.
+    'own-pnpm-half': {
+      files: {
+        'package.json': pnpmPkg,
+        'pnpm-lock.yaml': pnpmLock,
+        'pnpm-workspace.yaml': ws,
+        '.npmrc': 'legacy-peer-deps=true\nengine-strict=true\n',
+        'docs/setup.md': '# Setup\n\nRun `npm ci`, then `npx serve .`\n',
+        'index.js': index,
+      },
+      git: { remote: OWN_REMOTE },
+    },
+
     'own-npm-npmrc': {
       files: {
         'package.json': npmPkg,

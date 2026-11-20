@@ -50,7 +50,7 @@ Use this scenario to move an own repository from npm or Yarn to pnpm. Keep the v
    - `releaseAgeOption`: `none` (no blocked entry), `wait`, `resolve-again` or `exception`.
    - `createFiles`: add `.github/workflows/node-security.yml` only if the repository has `.github/workflows`. If it does not have this folder, ask the user. `validate-plan.mjs` gives a warning in this case.
    - `npmrcTranslation`: one entry for each line of `.npmrc`. See "Translate .npmrc".
-   - `npmReferences`: search the repository for `npm run`, `npm ci`, `npm install`, `npx` and `package-lock.json`. Exclude `node_modules`.
+   - `npmReferences`: copy `facts.npmReferences` of `detect.mjs` (`<file>:<line>`). Also search for `package-lock.json` in Dockerfiles and CI files. Do not add an entry with `agentFile: true`: tell the user the file and the line. The user changes agent files.
 4. **Validate the plan.** Run exactly:
 
    ```
@@ -99,7 +99,14 @@ The lockfile has entries that are younger than the release age. Give the user th
 1. Tell the user that versions will change, and that the build and the tests must pass again.
 2. Delete `pnpm-lock.yaml` and `node_modules` with the `node -e` command of step 7. pnpm 12 checks an existing lockfile against the release age also without `--frozen-lockfile`, thus the lockfile must be deleted.
 3. Run `pnpm install`.
-4. Compare the versions of the direct dependencies with the old lockfile (`git show HEAD:package-lock.json`). Tell the user each difference.
+4. Compare the versions with the old lockfile. Write the old lockfile to the system temporary directory, not to the repository, and run exactly:
+
+   ```
+   git show <commit>:package-lock.json > <temp-dir>/old-package-lock.json
+   node <skill-dir>/scripts/lock-diff.mjs <temp-dir>/old-package-lock.json
+   ```
+
+   `<commit>` is the last commit that has `package-lock.json`. Tell the user `directChanged` and the number of transitive changes.
 5. Run `release-age.mjs` again. The result must be PASS.
 
 An exact pin in `package.json` (for example `"@progress/kendo-licensing": "1.13.1"`) cannot change. If an exact pin is blocked, option B fails until `exactPinsEligibleAt`.
@@ -122,6 +129,26 @@ pnpm 11 and later read settings from `pnpm-workspace.yaml`. `.npmrc` keeps only 
 | Other key | Ask the user. Do not guess a translation. |
 
 If `.npmrc` is empty after the translation, delete it. Add `.npmrc` to `deleteFiles` in the plan.
+
+## Resume a migration
+
+Use this section when `detect.mjs` gives `migrate` with the reason "Migration not complete". The repository has `pnpm-lock.yaml`, but some steps of the migration are not done. `facts.pendingMigration` lists them.
+
+1. Do step 1 (preconditions) and step 2 (release age) of the checklist.
+2. For each step from 3 to 11, check if it is done. Tell the user the result as a list: done, or not done with the reason. Use these checks:
+
+   | Step | Done if |
+   |---|---|
+   | 6. Import the lockfile | `pnpm-lock.yaml` exists. |
+   | 7. Remove the old lockfile | No `package-lock.json`, `npm-shrinkwrap.json` or `yarn.lock`. |
+   | 8. Templates and `.npmrc` | `packageManager` is `pnpm@<exact-version>`, `devEngines` requires pnpm, `pnpm-workspace.yaml` exists, and `check-policy.mjs` gives no `NPMRC_TRANSLATION`. |
+   | 9. Install and build approvals | `pnpm install --frozen-lockfile` passes. |
+   | 10. Undeclared dependencies | The build and the tests pass. |
+   | 11. References to npm | `facts.npmReferences` is empty, except entries with `agentFile: true`. |
+
+3. Write the plan (step 3) with the steps that are not done. Validate it (step 4) and get approval (step 5).
+4. Do the steps that are not done, in the sequence of the checklist.
+5. Do step 12. The migration is complete only if `check-policy.mjs` gives no `NPMRC_TRANSLATION` and no `NPM_REFERENCES` finding, except references in agent files that the user keeps.
 
 ## Tools that need a flat node_modules
 

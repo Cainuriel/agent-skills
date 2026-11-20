@@ -2,7 +2,7 @@
 
 Supply-chain security protocol for Node.js and JavaScript repositories, packaged as an [Agent Skill](https://agentskills.io).
 
-Version 0.1.1. Status: draft, not signed. Last review of version data: 2026-11-20.
+Version 0.1.2. Status: draft, not signed. Last review of version data: 2026-11-20.
 
 ## Why
 
@@ -25,6 +25,7 @@ The skill secures the environment in which development starts. It applies to set
 | pnpm by default, with an exact version in `packageManager` | Safe defaults: dependency build scripts blocked, minimum release age, no exotic transitive sources |
 | `devEngines.packageManager` with `onFail: error` | npm refuses to install in a pnpm repository |
 | Hardened `pnpm-workspace.yaml` (release age 3 days, `trustPolicy: no-downgrade`, explicit build approvals) | Delay new versions; refuse trust downgrades; approve each native build |
+| Migration not complete (npm settings in `.npmrc`, npm commands in files) detected and resumed | A migration is complete only when no npm setting or command is left |
 | Release age checked before and after each install, with the date when each blocked entry becomes installable | No surprise blocks; no young versions installed with a weaker policy |
 | Release-age exceptions: last option, exact versions, never for a version younger than 24 hours, approval that names the packages, temporary | The user decides; each exception is narrow, recorded and expires |
 | npm only as a documented exception, version 12 or later, hardened `.npmrc` | Same protections where npm is required |
@@ -55,6 +56,7 @@ node-security/             Installable skill folder
 │   ├── inspect-repo.mjs   Risk report for a foreign repository
 │   ├── check-policy.mjs   Compliance check (PASS or FAIL)
 │   ├── release-age.mjs    Lockfile entries against the release age and the exceptions (reads the npm registry)
+│   ├── lock-diff.mjs      Version changes between an old lockfile and the current lockfile
 │   └── validate-plan.mjs  Validation of a migration plan before any change
 └── assets/                Templates copied into target repositories
 ```
@@ -80,7 +82,7 @@ The agent follows `SKILL.md`. Every check that a program can do is a script: the
 - Change the package manager, lockfile or configuration of a foreign repository.
 - Set `dangerouslyAllowAllBuilds`, `trustLockfile` or a release age of less than one day.
 - Write a release-age exception without an exact version (pnpm), with a pattern (npm), or for a version younger than 24 hours. The user can write these; the validation then reports FAIL and the report records the accepted risk.
-- Commit without a request from the user.
+- Commit without a request from the user. The commit message format, including attribution trailers, follows the configuration of the user's agent.
 
 ### Prompt injection
 

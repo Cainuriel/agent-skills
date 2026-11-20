@@ -8,7 +8,8 @@ import path from 'node:path';
 import {
   PROTOCOL_VERSION, MIN_RELEASE_AGE_MINUTES, MIN_PNPM_MAJOR, MIN_NPM_MAJOR, FOREIGN_LOCKFILES,
   NPM_REGISTRY_HOSTS, exists, readTextSafe, readJsonSafe, parseNpmrc, npmrcList, parseSimpleYaml, walk,
-  parseArgs, semverMajor, isExactSemver, parseExactExclusion, printTable,
+  parseArgs, semverMajor, isExactSemver, parseExactExclusion, printTable, NPMRC_TRANSLATIONS, isRegistryOrAuthKey,
+  findNpmReferences,
 } from './lib/common.mjs';
 
 const args = parseArgs(process.argv.slice(2));
@@ -93,15 +94,29 @@ if (mode === 'pnpm') {
     }
   }
 
-  // .npmrc in a pnpm repository: authentication and registry only.
+  // .npmrc in a pnpm repository: authentication and registry only. pnpm 11+ ignores other npm keys.
   const npmrc = parseNpmrc(readTextSafe(path.join(root, '.npmrc')));
   for (const [key, value] of Object.entries(npmrc)) {
     if (key === 'registry' || /^@[^:]+:registry$/.test(key)) {
       const host = value.replace(/^https?:\/\//, '').split('/')[0];
       if (!NPM_REGISTRY_HOSTS.includes(host)) warn('CUSTOM_REGISTRY', `.npmrc ${key}=${value}`, 'Confirm that this registry is intended.');
-    } else if (!/^\/\/|_auth|always-auth/.test(key)) {
-      warn('NPMRC_SETTING', `.npmrc ${key}`, 'pnpm 11+ reads settings from pnpm-workspace.yaml. Move or remove this key.');
+    } else if (isRegistryOrAuthKey(key)) {
+      continue;
+    } else if (Object.hasOwn(NPMRC_TRANSLATIONS, key)) {
+      const target = NPMRC_TRANSLATIONS[key];
+      fail('NPMRC_TRANSLATION', `.npmrc ${key}=${value}. pnpm ignores this key.`,
+        target ? `Set ${target}: ${value} in pnpm-workspace.yaml and remove the key (reference/migrate.md).` : 'Remove the key (reference/migrate.md, "Translate .npmrc").');
+    } else {
+      warn('NPMRC_SETTING', `.npmrc ${key}`, 'pnpm 11+ reads settings from pnpm-workspace.yaml. Ask the user how to translate this key.');
     }
+  }
+
+  // npm commands that remain in the repository after a migration.
+  const refs = findNpmReferences(root);
+  if (refs.length) {
+    const files = [...new Set(refs.map((r) => r.file))];
+    warn('NPM_REFERENCES', `${refs.length} npm commands in ${files.length} files: ${files.slice(0, 6).join(', ')}${files.length > 6 ? ', ...' : ''}`,
+      'Change them to pnpm (reference/migrate.md, step 11). Agent files: tell the user, do not edit.');
   }
 } else {
   // npm mode: documented exception.

@@ -1,6 +1,6 @@
 {
   "skill": "node-security",
-  "protocol_version": "0.1.1",
+  "protocol_version": "0.1.2",
   "owners": "cainuriel",
   "cases": [
     {
@@ -613,6 +613,53 @@
             "path": "devDependencies.@angular/cli",
             "match": "^\\^21\\.2\\.0$"
           }
+        }
+      ]
+    },
+    {
+      "id": "mig-06",
+      "scenario": "migrate",
+      "fixture": "own-pnpm-half",
+      "query": "Continúa la migración a pnpm de este repositorio.",
+      "user_replies": [
+        "Mis owners son cainuriel.",
+        "Sí, aprobado. Adelante con todo el plan."
+      ],
+      "expected_behavior": [
+        "Proposes migrate with the reason 'Migration not complete', not audit",
+        "Uses 'Resume a migration' in reference/migrate.md and lists the steps that are done and not done",
+        "Moves engine-strict=true to engineStrict: true in pnpm-workspace.yaml and removes .npmrc when it is empty",
+        "Changes npm ci and npx serve in docs/setup.md to pnpm commands",
+        "Does not write that the migration is complete while NPMRC_TRANSLATION or NPM_REFERENCES findings are open",
+        "Does not commit"
+      ],
+      "fs_checks": [
+        {
+          "contains": {
+            "file": "pnpm-workspace.yaml",
+            "text": "engineStrict: true"
+          }
+        },
+        {
+          "notContains": {
+            "file": ".npmrc",
+            "text": "engine-strict"
+          }
+        },
+        {
+          "notContains": {
+            "file": "docs/setup.md",
+            "text": "npm ci"
+          }
+        },
+        {
+          "notContains": {
+            "file": "docs/setup.md",
+            "text": "npx "
+          }
+        },
+        {
+          "policy": "PASS"
         }
       ]
     }
