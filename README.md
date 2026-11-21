@@ -8,7 +8,7 @@ A skill is a folder with a `SKILL.md` file and optional scripts, references and 
 
 | Folder | Skill | Purpose | Status |
 |---|---|---|---|
-| [`node-security/`](node-security/) | `node-security` | Supply-chain security protocol for Node.js and JavaScript repositories | 0.1.4, draft, not signed |
+| [`node-security/`](node-security/) | `node-security` | Supply-chain security protocol for Node.js and JavaScript repositories | 0.1.5, draft, not signed |
 
 ## Repository layout
 

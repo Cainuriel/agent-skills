@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const PROTOCOL_VERSION = '0.1.4';
+export const PROTOCOL_VERSION = '0.1.5';
 
 // Minimum release age accepted by the protocol, in minutes.
 // 1440 (one day) is the pnpm 11+ default; most compromised versions are removed within hours.

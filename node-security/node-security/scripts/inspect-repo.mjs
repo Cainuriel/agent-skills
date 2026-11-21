@@ -234,9 +234,10 @@ const order = { high: 0, medium: 1, low: 2 };
 findings.sort((a, b) => order[a.risk] - order[b.risk] || a.id.localeCompare(b.id));
 const counts = { high: 0, medium: 0, low: 0 };
 for (const f of findings) counts[f.risk]++;
+// The script does not know who owns the repository. The agent applies the scenario (detect.mjs).
 const recommendation = counts.high > 0
-  ? 'Trust: low. Inspection only. Do not install without an explicit user decision.'
-  : 'No high risk found. Classify trust with the rules in reference/foreign.md.';
+  ? 'High findings: review each one. Foreign repository: trust low, inspection only, no install without an explicit user decision (reference/foreign.md). Own repository: the user confirms each finding as intended (reference/audit.md).'
+  : 'No high finding. Foreign repository: classify trust with reference/foreign.md. Own repository: the user confirms each medium finding as intended (reference/audit.md).';
 
 const report = { protocolVersion: PROTOCOL_VERSION, path: root, counts, recommendation, findings, scriptMap };
 if (args.json) {

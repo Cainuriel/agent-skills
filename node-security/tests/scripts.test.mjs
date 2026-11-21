@@ -195,7 +195,7 @@ test('inspect-repo: trap repository reports every high-risk item', () => {
     assert.ok(high.has(id), `missing high finding ${id}`);
   }
   assert.ok(r.json.findings.some((f) => f.id === 'NATIVE_BUILD'));
-  assert.match(r.json.recommendation, /Trust: low/);
+  assert.match(r.json.recommendation, /Foreign repository: trust low/);
   assert.equal(snapshot(dir), before, 'inspect-repo changed files');
 });
 
