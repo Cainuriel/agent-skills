@@ -1,4 +1,4 @@
-# node-security protocol 0.1.3 - CI policy check for pnpm repositories
+# node-security protocol 0.1.4 - CI policy check for pnpm repositories
 # Actions are pinned to full commit SHAs. The tag is in the comment. Update both together.
 name: node-security
 

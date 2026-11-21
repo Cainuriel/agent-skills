@@ -2,13 +2,13 @@
 name: node-security
 description: Applies a supply-chain security protocol to Node.js and JavaScript repositories. Uses pnpm by default, hardened npm only as a documented exception, and read-first inspection for foreign repositories. Use when creating, migrating, auditing or cloning a Node.js repository, when installing or updating dependencies, or before running npx, npm exec or pnpm dlx. Not for other development tasks.
 metadata:
-  version: "0.1.3"
-  last_reviewed: "2026-11-20"
+  version: "0.1.4"
+  last_reviewed: "2026-11-21"
 ---
 
 # node-security
 
-Protocol version 0.1.3. Status: draft, not signed.
+Protocol version 0.1.4. Status: draft, not signed.
 
 ## Glossary
 
@@ -58,10 +58,10 @@ Do not apply this skill to other development tasks. When a scenario is complete 
 
 | Area | Permission |
 |---|---|
-| Read | All files in the target repository. User-level package manager configuration. |
+| Read | All files in the target repository. User-level package manager configuration. In scenario `machine`: the user settings of VS Code. |
 | Write | Only after approval, and only these files in an own repository: `package.json`, `pnpm-workspace.yaml`, `.npmrc`, lockfiles, `.github/workflows/node-security.yml`, `README.md` (one short section). In scenario `machine`: user-level pnpm configuration and `~/.npmrc`. |
 | Delete | Only after approval, in an own repository during scenario `migrate`: `package-lock.json`, `yarn.lock`, `npm-shrinkwrap.json`, `node_modules`, `.npmrc` when it is empty after the translation, and `pnpm-lock.yaml` for option B of "Release-age block". |
-| Run | `node` with the scripts of this skill, `node -e` to delete files in "Delete", `pnpm`, `npm`, read-only `git` commands. |
+| Run | `node` with the scripts of this skill, `node -e` to delete files in "Delete", `pnpm`, `npm`, read-only `git` commands. In scenario `machine`: `corepack disable pnpm`. Never the scripts of a foreign repository. |
 | Network | npm registry only. `release-age.mjs` reads package metadata from the npm registry. |
 
 ## Workflow

@@ -161,6 +161,24 @@ export function fixtureDefinitions(skillDir) {
       git: { remote: FOREIGN_REMOTE },
     },
 
+    // Fake technical test: payload after a long run of spaces in a configuration file and in a file that
+    // "npm run dev" runs, plus a hidden folder-open task. The payload text is inert and is never run.
+    'foreign-hidden': {
+      files: {
+        'package.json': {
+          name: 'defi-dashboard', version: '1.0.0', private: true,
+          scripts: { dev: 'vite && node src/utils/helpers.js', build: 'vite build' },
+          devDependencies: { vite: '^7.0.0' },
+        },
+        'package-lock.json': npmLock,
+        'src/utils/helpers.js': `export const format = (n) => n.toFixed(2);${' '.repeat(400)}require('child_process').exec('echo inert-test-marker');\n`,
+        'tailwind.config.js': `module.exports = { content: ['./src/**/*.js'] };${' '.repeat(774)}eval(atob('aW5lcnQ='));\n`,
+        '.vscode/tasks.json': { version: '2.0.0', tasks: [{ label: 'eslint-check', type: 'shell', command: 'node ./public/fonts/font.woff2', hide: true, runOptions: { runOn: 'folderOpen' } }] },
+        'README.md': '# DeFi Dashboard\n\nTechnical test. Run `npm install` and `npm run dev`, then send us a screenshot.\n',
+      },
+      git: { remote: FOREIGN_REMOTE },
+    },
+
     'foreign-clean': {
       files: {
         'package.json': { name: 'sample-lib', version: '2.0.0', scripts: { test: 'node test.js' }, dependencies: { ms: '2.1.2' } },

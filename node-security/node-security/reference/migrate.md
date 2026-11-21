@@ -10,13 +10,14 @@ Use this scenario to move an own repository from npm or Yarn to pnpm. Keep the v
 - [ ] 3. Write the migration plan
 - [ ] 4. Validate the plan
 - [ ] 5. Get approval
-- [ ] 6. Import the lockfile
-- [ ] 7. Remove the old lockfile and node_modules
-- [ ] 8. Apply the templates and translate .npmrc
-- [ ] 9. Install and review build approvals
-- [ ] 10. Correct undeclared dependencies
-- [ ] 11. Update references to npm
-- [ ] 12. Validate
+- [ ] 6. Set pnpm as the package manager
+- [ ] 7. Import the lockfile
+- [ ] 8. Remove the old lockfile and node_modules
+- [ ] 9. Translate .npmrc
+- [ ] 10. Install and review build approvals
+- [ ] 11. Correct undeclared dependencies
+- [ ] 12. Update references to npm
+- [ ] 13. Validate
 ```
 
 ## Steps
@@ -59,17 +60,18 @@ Use this scenario to move an own repository from npm or Yarn to pnpm. Keep the v
 
    If the result is FAIL, correct the plan and run the command again.
 5. **Get approval.** Show the plan to the user. Wait for approval. The plan deletes files.
-6. **Import the lockfile.** Run `pnpm import`. This command reads the old lockfile and writes `pnpm-lock.yaml` with the same versions.
-7. **Remove the old lockfile and node_modules.** Use Node.js on all operating systems. On Windows, `Remove-Item` and `rmdir` fail on long paths in `node_modules`. Run one command for each entry in `deleteFiles` and for `node_modules`:
+6. **Set pnpm as the package manager.** Do steps 2 to 4 of [new.md](new.md): `packageManager` and `devEngines` in `package.json`, `pnpm-workspace.yaml` from the template, and the CI workflow only if the plan creates it. Do this step before any `pnpm` command. While `packageManager` names npm, pnpm stops every command, also `pnpm import`, with `ERR_PNPM_OTHER_PM_EXPECTED` (verified, see [versions.md](versions.md)).
+7. **Import the lockfile.** If `releaseAgeOption` is `resolve-again`, do not import: there is no old lockfile to keep. Else run `pnpm import`. This command reads the old lockfile and writes `pnpm-lock.yaml` with the same versions.
+8. **Remove the old lockfile and node_modules.** Use Node.js on all operating systems. On Windows, `Remove-Item` and `rmdir` fail on long paths in `node_modules`. Run one command for each entry in `deleteFiles` and for `node_modules`:
 
    ```
    node -e "require('fs').rmSync('<path>', { recursive: true, force: true })"
    ```
 
-8. **Apply the templates and translate .npmrc.** Do steps 2 to 4 of [new.md](new.md). Then apply `npmrcTranslation` (see "Translate .npmrc").
-9. **Install and review build approvals.** Run `pnpm install --frozen-lockfile`. If pnpm reports `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`, do "Release-age block". Then do step 6 of [new.md](new.md).
-10. **Correct undeclared dependencies.** Run the build and the tests of the repository. If an error says that a module is not found, the code uses a dependency that `package.json` does not declare. Add that dependency to `package.json` with the version that the old lockfile used. Run the build and the tests again.
-11. **Update references to npm.** For each entry in `npmReferences`, change the command to pnpm:
+9. **Translate .npmrc.** Apply `npmrcTranslation` (see "Translate .npmrc").
+10. **Install and review build approvals.** Run `pnpm install --frozen-lockfile`. With `releaseAgeOption` `resolve-again`, run `pnpm install`. If pnpm reports `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`, do "Release-age block". Then do step 6 of [new.md](new.md).
+11. **Correct undeclared dependencies.** Run the build and the tests of the repository. If an error says that a module is not found, the code uses a dependency that `package.json` does not declare. Add that dependency to `package.json` with the version that the old lockfile used. Run the build and the tests again.
+12. **Update references to npm.** For each entry in `npmReferences`, change the command to pnpm:
 
     | npm | pnpm |
     |---|---|
@@ -79,8 +81,8 @@ Use this scenario to move an own repository from npm or Yarn to pnpm. Keep the v
     | `npx <bin>` (package in `package.json`) | `pnpm exec <bin>` |
     | `npx <package>` (package not in `package.json`) | `pnpm dlx <package>@<exact-version>` |
 
-    Also check framework configuration. Example: in an Angular repository, set `cli.packageManager` to `pnpm` in `angular.json`. In a Dockerfile, copy `pnpm-workspace.yaml` into the image and install pnpm with the exact version.
-12. **Validate.** Do Step 5 of SKILL.md.
+    Also check framework configuration. Example: in an Angular repository, set `cli.packageManager` to `pnpm` in `angular.json`. For `.vscode/tasks.json` with `"type": "npm"`, add `"npm.packageManager": "pnpm"` to `.vscode/settings.json`: VS Code then runs these tasks with pnpm. In a Dockerfile, copy `pnpm-workspace.yaml` into the image and install pnpm with the exact version.
+13. **Validate.** Do Step 5 of SKILL.md.
 
 ## Release-age block
 
@@ -97,7 +99,7 @@ The lockfile has entries that are younger than the release age. Give the user th
 **Option B. Resolve again.**
 
 1. Tell the user that versions will change, and that the build and the tests must pass again.
-2. Delete `pnpm-lock.yaml` and `node_modules` with the `node -e` command of step 7. pnpm 12 checks an existing lockfile against the release age also without `--frozen-lockfile`, thus the lockfile must be deleted.
+2. Delete `pnpm-lock.yaml` and `node_modules` with the `node -e` command of step 8. pnpm 12 checks an existing lockfile against the release age also without `--frozen-lockfile`, thus the lockfile must be deleted.
 3. Run `pnpm install`.
 4. Compare the versions with the old lockfile. Write the old lockfile to the system temporary directory, not to the repository, and run exactly:
 
@@ -135,20 +137,21 @@ If `.npmrc` is empty after the translation, delete it. Add `.npmrc` to `deleteFi
 Use this section when `detect.mjs` gives `migrate` with the reason "Migration not complete". The repository has `pnpm-lock.yaml`, but some steps of the migration are not done. `facts.pendingMigration` lists them.
 
 1. Do step 1 (preconditions) and step 2 (release age) of the checklist.
-2. For each step from 3 to 11, check if it is done. Tell the user the result as a list: done, or not done with the reason. Use these checks:
+2. For each step from 3 to 12, check if it is done. Tell the user the result as a list: done, or not done with the reason. Use these checks:
 
    | Step | Done if |
    |---|---|
-   | 6. Import the lockfile | `pnpm-lock.yaml` exists. |
-   | 7. Remove the old lockfile | No `package-lock.json`, `npm-shrinkwrap.json` or `yarn.lock`. |
-   | 8. Templates and `.npmrc` | `packageManager` is `pnpm@<exact-version>`, `devEngines` requires pnpm, `pnpm-workspace.yaml` exists, and `check-policy.mjs` gives no `NPMRC_TRANSLATION`. |
-   | 9. Install and build approvals | `pnpm install --frozen-lockfile` passes. |
-   | 10. Undeclared dependencies | The build and the tests pass. |
-   | 11. References to npm | `facts.npmReferences` is empty, except entries with `agentFile: true`. |
+   | 6. pnpm as the package manager | `packageManager` is `pnpm@<exact-version>`, `devEngines` requires pnpm, and `pnpm-workspace.yaml` exists. |
+   | 7. Import the lockfile | `pnpm-lock.yaml` exists. |
+   | 8. Remove the old lockfile | No `package-lock.json`, `npm-shrinkwrap.json` or `yarn.lock`. |
+   | 9. `.npmrc` | `check-policy.mjs` gives no `NPMRC_TRANSLATION`. |
+   | 10. Install and build approvals | `pnpm install --frozen-lockfile` passes. |
+   | 11. Undeclared dependencies | The build and the tests pass. |
+   | 12. References to npm | `facts.npmReferences` is empty, except entries with `agentFile: true`. |
 
 3. Write the plan (step 3) with the steps that are not done. Validate it (step 4) and get approval (step 5).
 4. Do the steps that are not done, in the sequence of the checklist.
-5. Do step 12. The migration is complete only if `check-policy.mjs` gives no `NPMRC_TRANSLATION` and no `NPM_REFERENCES` finding, except references in agent files that the user keeps.
+5. Do step 13. The migration is complete only if `check-policy.mjs` gives no `NPMRC_TRANSLATION` and no `NPM_REFERENCES` finding, except references in agent files that the user keeps.
 
 ## Tools that need a flat node_modules
 

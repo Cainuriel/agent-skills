@@ -2,7 +2,7 @@
 
 Supply-chain security protocol for Node.js and JavaScript repositories, packaged as an [Agent Skill](https://agentskills.io).
 
-Version 0.1.3. Status: draft, not signed. Last review of version data: 2026-11-20.
+Version 0.1.4. Status: draft, not signed. Last review of version data: 2026-11-21.
 
 ## Why
 
@@ -30,6 +30,8 @@ The skill secures the environment in which development starts. It applies to set
 | Release-age exceptions: last option, exact versions, never for a version younger than 24 hours, approval that names the packages, temporary | The user decides; each exception is narrow, recorded and expires |
 | npm only as a documented exception, version 12 or later, hardened `.npmrc` | Same protections where npm is required |
 | Foreign repositories: inspection first, install without scripts only after a user decision | Foreign code and its configuration can disable protections |
+| Inspection of what each script runs, of editor auto-run (`.vscode`, `*.code-workspace`), of tool-named executables at the root, and of code hidden after long runs of blank characters | The fake-job-interview campaigns run their payload through `npm run dev`, a configuration file or a folder-open task, not through install |
+| VS Code hygiene: no automatic tasks, no wide trusted folders, word wrap on | A trusted parent folder or automatic tasks turn "open a folder" into "run its code" |
 | Ephemeral tools: `pnpm exec`, or `pnpm dlx <package>@<exact-version>` | No `@latest`, no unpinned downloads |
 
 ## Scenarios
@@ -53,11 +55,12 @@ node-security/             Installable skill folder
 ├── reference/             One file per scenario, plus versions.md (the only version-specific data)
 ├── scripts/               Deterministic checks. Node.js built-in modules only. Read-only.
 │   ├── detect.mjs         Repository facts and the proposed scenario
-│   ├── inspect-repo.mjs   Risk report for a foreign repository
+│   ├── inspect-repo.mjs   Risk report for a repository: install, editor, scripts, hidden code, agent files
 │   ├── check-policy.mjs   Compliance check (PASS or FAIL)
 │   ├── release-age.mjs    Lockfile entries against the release age and the exceptions (reads the npm registry)
 │   ├── lock-diff.mjs      Version changes between an old lockfile and the current lockfile
-│   └── validate-plan.mjs  Validation of a migration plan before any change
+│   ├── validate-plan.mjs  Validation of a migration plan before any change
+│   └── lib/               Shared code: parsing, editor checks, script map and hidden-code scan
 └── assets/                Templates copied into target repositories
 ```
 
@@ -69,10 +72,10 @@ The agent follows `SKILL.md`. Every check that a program can do is a script: the
 
 | Area | Permission |
 |---|---|
-| Read | Files of the target repository, user-level package manager configuration |
+| Read | Files of the target repository, user-level package manager configuration, VS Code user settings (scenario `machine`) |
 | Write | After approval, only: `package.json`, `pnpm-workspace.yaml`, `.npmrc`, lockfiles, `.github/workflows/node-security.yml`, one section of `README.md` |
 | Delete | After approval, in scenario `migrate` only: npm or Yarn lockfiles and `node_modules` |
-| Run | Its own scripts, `node -e` for the deletions of the migration, `pnpm`, `npm`, read-only `git` commands |
+| Run | Its own scripts, `node -e` for the deletions of the migration, `pnpm`, `npm`, read-only `git` commands, `corepack disable pnpm` (scenario `machine`). Never the scripts of a foreign repository |
 | Network | npm registry only (package manager, and package metadata for `release-age.mjs`) |
 
 ### What the skill never does
@@ -91,7 +94,11 @@ Foreign repositories can contain text written to manipulate agents. `inspect-rep
 - agent files and agent hooks,
 - agent files and documentation with manipulation phrases (`PROMPT_INJECTION`, `AGENT_FILE_INSTRUCTIONS`),
 - hidden HTML comments that address AI agents (`HIDDEN_INSTRUCTIONS`),
-- editor tasks that run when a folder opens.
+- editor settings that let an AI agent run tools without approval (`EDITOR_AGENT_AUTOAPPROVE`).
+
+### Code execution without install
+
+Malicious repositories also run code outside install. `inspect-repo.mjs` reports editor tasks that run when a folder opens or that hide from the user, settings that name an executable or a command, MCP servers, executables at the root with the name of a common tool, the files that each script runs, and code hidden after long runs of blank characters. The checks are static: the report is a list of what to review, not a statement that a repository is safe.
 
 Pattern detection is never complete. The skill instructs the agent to treat all foreign text as data and to report any text that gives it instructions. For enforcement that does not depend on the model, use the permission controls of your agent (see "Limits").
 

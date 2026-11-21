@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// node-security inspect-repo: risk report for a foreign repository. Read-only.
+// node-security inspect-repo: risk report for a repository. Read-only.
 // It does not install, does not run repository code and does not follow symbolic links.
+// It reports install risks, editor auto-run, what each package.json script runs, and hidden code.
 // Usage: node inspect-repo.mjs [repo-path] [--json]
 // Exit code 0 (report produced), or 2 on a usage error.
 
@@ -8,8 +9,10 @@ import path from 'node:path';
 import {
   PROTOCOL_VERSION, MIN_PNPM_MAJOR, MIN_RELEASE_AGE_MINUTES, NPM_REGISTRY_HOSTS,
   exists, isSymlink, readTextSafe, readJsonSafe, parseNpmrc, parseSimpleYaml,
-  lockfilesAtRoot, isAgentPath, walk, parseArgs, semverMajor, printTable,
+  lockfilesAtRoot, isAgentPath, walk, parseArgs, semverMajor, printTable, toPosix,
 } from './lib/common.mjs';
+import { inspectEditor, inspectRootExecutables } from './lib/editor.mjs';
+import { mapScript, configFiles, scanCode, sourceFiles } from './lib/execution.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const root = path.resolve(args._[0] ?? process.cwd());
@@ -124,11 +127,9 @@ for (const f of lockfiles) {
   if (hosts.size) add('high', 'LOCKFILE_EXTERNAL_HOST', f, [...hosts].slice(0, 5).join(', '));
 }
 
-// 4. Editor and agent files: automatic execution and instruction injection.
-const tasks = readTextSafe(path.join(root, '.vscode', 'tasks.json'));
-if (tasks && /"runOn"\s*:\s*"folderOpen"/.test(tasks)) {
-  add('high', 'EDITOR_AUTORUN', '.vscode/tasks.json', 'A task runs when the folder opens');
-}
+// 4. Editor files, root executables and agent files: automatic execution and instruction injection.
+inspectEditor(root, add);
+inspectRootExecutables(root, add);
 if (exists(path.join(root, '.devcontainer'))) {
   add('medium', 'DEVCONTAINER', '.devcontainer/', 'Do not use the repository devcontainer definition');
 }
@@ -173,6 +174,61 @@ walk(root, {
   },
 });
 
+// 6. What each package.json script runs. The scripts are parsed, never run.
+const rel = (full) => toPosix(path.relative(root, full));
+const scriptMap = [];
+const executedFiles = new Map(); // full path -> list of "package.json#script" or "config"
+for (const { full, rel: pkgRel } of packageFiles) {
+  const pkg = readJsonSafe(full).value;
+  const scripts = pkg?.scripts ?? {};
+  const pkgDir = path.dirname(full);
+  const deps = new Set(['dependencies', 'devDependencies', 'optionalDependencies'].flatMap((f) => Object.keys(pkg?.[f] ?? {})));
+  for (const name of Object.keys(scripts)) {
+    if (/^(pre|post)/.test(name) && typeof scripts[name.replace(/^(pre|post)/, '')] === 'string') continue;
+    const m = mapScript(scripts, name, pkgDir, deps);
+    const entry = { package: pkgRel, script: name, files: m.files.map(rel), tools: m.tools, inline: m.inline, downloads: m.downloads, remote: m.remote, missing: m.missing };
+    scriptMap.push(entry);
+    for (const f of m.files) executedFiles.set(f, [...(executedFiles.get(f) ?? []), `${pkgRel}#${name}`]);
+    const where = `${pkgRel}#${name}`;
+    if (m.inline.length) {
+      const text = m.inline.join(' | ');
+      add(SUSPICIOUS.test(text) ? 'high' : 'medium', 'SCRIPT_INLINE_CODE', where, text);
+    }
+    if (m.downloads.length) add('high', 'SCRIPT_DOWNLOAD', where, m.downloads.join(' | '));
+    if (m.remote.length) add('medium', 'SCRIPT_REMOTE_PACKAGE', where, `npx or dlx runs: ${m.remote.join(', ')}. It downloads the package if it is not a local dependency.`);
+  }
+  for (const f of configFiles(pkgDir)) executedFiles.set(f, [...(executedFiles.get(f) ?? []), 'config file loaded by tools']);
+}
+// One finding for each repository file that scripts run, with the scripts that run it.
+for (const [full, from] of executedFiles) {
+  const scriptsFrom = from.filter((x) => x !== 'config file loaded by tools');
+  if (!scriptsFrom.length) continue;
+  const shown = scriptsFrom.slice(0, 4).join(', ') + (scriptsFrom.length > 4 ? `, and ${scriptsFrom.length - 4} more` : '');
+  add('medium', 'SCRIPT_RUNS_FILE', rel(full), `Run by: ${shown}. Review this file before you run these scripts.`);
+}
+
+// 7. Hidden and obfuscated code. All source files: code after a long run of blank characters.
+// Files that scripts run and configuration files: also obfuscation indicators and long lines.
+const scanned = new Set();
+for (const full of [...executedFiles.keys(), ...sourceFiles(root)]) {
+  if (scanned.has(full)) continue;
+  scanned.add(full);
+  const r = scanCode(full);
+  for (const h of r.hidden.slice(0, 3)) {
+    add(h.inString ? 'medium' : 'high', 'HIDDEN_CODE', `${rel(full)}:${h.line}`,
+      `Code at column ${h.column}, after ${h.blanks} blank characters${h.inString ? ' (probably inside a string)' : ''}. Start: ${JSON.stringify(h.snippet)}`);
+  }
+  if (!executedFiles.has(full)) continue;
+  // One indicator alone is common in legitimate code (for example child_process in a test configuration).
+  if (r.indicators.length) {
+    const severe = r.indicators.length >= 2 || r.hidden.some((h) => !h.inString);
+    add(severe ? 'high' : 'medium', 'CODE_INDICATORS', rel(full), `${r.indicators.join(', ')}. Runs from: ${executedFiles.get(full).join(', ')}`);
+  }
+  if (r.longLines && r.lines && r.longLines / r.lines < 0.5) {
+    add('medium', 'LONG_LINES', rel(full), `${r.longLines} lines longer than 1000 characters in a file that is not minified`);
+  }
+}
+
 // Report.
 const order = { high: 0, medium: 1, low: 2 };
 findings.sort((a, b) => order[a.risk] - order[b.risk] || a.id.localeCompare(b.id));
@@ -182,7 +238,7 @@ const recommendation = counts.high > 0
   ? 'Trust: low. Inspection only. Do not install without an explicit user decision.'
   : 'No high risk found. Classify trust with the rules in reference/foreign.md.';
 
-const report = { protocolVersion: PROTOCOL_VERSION, path: root, counts, recommendation, findings };
+const report = { protocolVersion: PROTOCOL_VERSION, path: root, counts, recommendation, findings, scriptMap };
 if (args.json) {
   console.log(JSON.stringify(report, null, 2));
 } else {
@@ -190,5 +246,16 @@ if (args.json) {
   console.log(`Repository: ${root}`);
   console.log(`Findings: ${counts.high} high, ${counts.medium} medium, ${counts.low} low\n`);
   if (findings.length) printTable(findings, ['risk', 'id', 'file', 'detail']);
+  const ran = scriptMap.filter((e) => e.files.length || e.tools.length || e.inline.length || e.downloads.length || e.remote.length);
+  if (ran.length) {
+    console.log('\nWhat each script runs (parsed, not run):');
+    printTable(ran.map((e) => ({
+      script: `${e.package}#${e.script}`,
+      files: e.files.join(', ') || '-',
+      tools: e.tools.join(', ') || '-',
+      other: [...e.inline, ...e.downloads, ...e.remote.map((x) => `remote:${x}`)].join(' | ') || '-',
+    })), ['script', 'files', 'tools', 'other']);
+    console.log('Tools also load configuration files (for example next.config.js or vite.config.ts). The hidden-code check covers them.');
+  }
   console.log(`\n${recommendation}`);
 }

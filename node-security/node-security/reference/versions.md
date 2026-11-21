@@ -1,6 +1,6 @@
 # Versions and verified behavior
 
-Reviewed: 2026-11-20. This is the only file in this skill with version-specific data.
+Reviewed: 2026-11-21. This is the only file in this skill with version-specific data.
 
 ## Current versions (npm registry, 2026-11-20)
 
@@ -28,6 +28,8 @@ Tests done on 2026-11-19 and 2026-11-20 with Node.js 22.23.5.
 | `devEngines.packageManager` with `name: npm`, `version: ">=12.0.0"` and `onFail: error` | npm 10.9.9, 11.21.3 stop; 12.2.3 continues | As expected |
 | pnpm uses the version in `packageManager` of `package.json` | pnpm 12.21.0 with `pnpm@11.28.12` | `pnpm -v` gives 11.28.12 |
 | The pnpm package has install scripts | pnpm 12.21.0 | `preinstall` and `postinstall`: `node install.js`, with optional platform packages |
+| A pnpm command in a project whose `packageManager` names npm | pnpm 12.21.0 | Stops with `ERR_PNPM_OTHER_PM_EXPECTED`, also `pnpm import`. Works after `packageManager` names pnpm. |
+| `npm install -g pnpm` when Corepack shims for pnpm exist | npm 10.9.9, Corepack with Node.js 22.23.5 (nvm-windows), user's computer | Fails with `EEXIST`. Works after `corepack disable pnpm`. |
 
 ### Release age
 
@@ -58,7 +60,20 @@ Tests done on 2026-11-19 and 2026-11-20 with Node.js 22.23.5.
 | Hardened `.npmrc` template (`min-release-age`, `allow-git`, `allow-remote`) | npm 12.2.3 | Accepted |
 | `allow-git=none` | npm 10.9.9 ignored; 11.21.3 applied | npm 11.21.3 stops a `github:` dependency |
 | A dependency `postinstall` script without approval | npm 12.2.3 | Blocked, with a warning |
+| `pnpm approve-builds '!<package>'`, then `true` in `allowBuilds` and `pnpm rebuild <package>` | pnpm 12.21.0 | Deny writes `false`; rebuild runs the script after the change to `true` |
+| Angular 21 project with all five build scripts denied (esbuild, lmdb, msgpackr-extract, @parcel/watcher, @progress/kendo-licensing) | pnpm 12.21.0, user's computer | `ng build`, 73 tests and `ng serve` work: the packages include prebuilt binaries |
 | `npm install-scripts approve <package>` | npm 12.2.3 | Writes a pinned entry (`esbuild@0.25.0: true`) in `allowScripts` of `package.json`. `npm approve-scripts` is an older alias. |
+
+### VS Code (stable, November 2026, user's computer, Windows)
+
+| Behavior | Result |
+|---|---|
+| Folder in Restricted Mode, task with `runOn: folderOpen` | Does not run |
+| Trusted folder, `task.allowAutomaticTasks: "off"` (user settings) | Does not run, no prompt |
+| Trusted folder, `task.allowAutomaticTasks: "on"` | Runs at each open, no prompt |
+| `task.allowAutomaticTasks` in the `.vscode/settings.json` of a repository | Ignored: "application scope", only in user settings |
+| Default value of `task.allowAutomaticTasks` | `off` (not in `@modified`). The default can change in a later version. |
+| Trust of a parent folder | Inherited by all subfolders, without a prompt |
 
 ## Old patterns
 
