@@ -80,16 +80,19 @@ if (plan.error) {
     const posix = checkPath('deleteFiles', rel);
     if (posix && !DELETABLE.has(path.posix.basename(posix))) fail('DELETE', `Only lockfiles, node_modules and an empty .npmrc can be deleted: "${rel}"`);
   }
+  // VS Code tasks of type "npm" (step 12 of reference/migrate.md): .vscode/settings.json gets "npm.packageManager".
+  const npmTasks = referencedFiles.has('.vscode/tasks.json');
   for (const rel of Array.isArray(v.createFiles) ? v.createFiles : []) {
     const posix = checkPath('createFiles', rel);
-    if (posix && !CREATABLE.has(posix)) fail('CREATE', `File not permitted: "${rel}"`);
+    if (posix && !CREATABLE.has(posix) && !(npmTasks && posix === '.vscode/settings.json')) fail('CREATE', `File not permitted: "${rel}"`);
     if (posix === '.github/workflows/node-security.yml' && !exists(path.join(root, '.github', 'workflows'))) {
       warn('CI_WORKFLOW', 'The repository does not use GitHub Actions. Create the workflow only if the user approves it.');
     }
   }
   for (const rel of Array.isArray(v.editFiles) ? v.editFiles : []) {
     const posix = checkPath('editFiles', rel);
-    if (posix && !EDITABLE_NAMES.has(path.posix.basename(posix)) && !referencedFiles.has(posix)) {
+    if (posix && !EDITABLE_NAMES.has(path.posix.basename(posix)) && !referencedFiles.has(posix)
+      && !(npmTasks && posix === '.vscode/settings.json')) {
       fail('EDIT', `File not permitted and not in npmReferences: "${rel}"`);
     }
   }

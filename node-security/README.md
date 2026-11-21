@@ -2,15 +2,16 @@
 
 Supply-chain security protocol for Node.js and JavaScript repositories, packaged as an [Agent Skill](https://agentskills.io).
 
-Version 0.1.5. Status: draft, not signed. Last review of version data: 2026-11-21.
+Version 0.1.6. Status: pre-release, under peer review, not signed. Last review of version data: 2026-11-21. Changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Why
 
-Since 2025, the npm registry has had repeated mass compromises: maintainer accounts taken over, self-propagating worms that steal tokens and republish packages, and install-time scripts that run malware before any code review. The attacks have three common points:
+Since 2025, the npm registry has had repeated mass compromises: maintainer accounts taken over, self-propagating worms that steal tokens and republish packages, and install-time scripts that run malware before any code review. In parallel, fake job interview campaigns send developers repositories that run malware when they are opened in the editor or started with `npm run dev`. The attacks have four common points:
 
 1. Malicious code runs during installation (lifecycle scripts, implicit native builds).
 2. Malicious versions live for hours or days before removal.
 3. Agents and developers install new versions immediately.
+4. Malicious repositories run code without any install: editor tasks that run when a folder opens, scripts that run a hidden file, configuration files that tools load, code hidden after hundreds of spaces.
 
 This skill makes an AI agent apply a consistent protocol that closes these points, and inspect foreign code before anything runs.
 
@@ -41,10 +42,10 @@ The agent detects the scenario, proposes it with the reason, and waits for appro
 | Scenario | When | Result |
 |---|---|---|
 | `new` | New own repository | pnpm setup with the hardened templates |
-| `migrate` | Own repository with npm or Yarn | Lockfile import with the same versions, validated plan, approval before any deletion |
+| `migrate` | Own repository with npm or Yarn, or a migration that is not complete | Same versions as the old lockfile when the release age permits, validated plan, approval before any deletion, translation of `.npmrc`, update of npm references |
 | `npm` | Own repository that must keep npm | Hardened npm configuration and the reason in the README |
-| `foreign` | Repository that the user does not control | Inspection report, trust level, install without scripts only if approved |
-| `audit` | Own pnpm repository | Compliance report, no changes |
+| `foreign` | Repository that the user does not control | Inspection report, trust level, install without scripts only if approved. The agent never runs its scripts |
+| `audit` | Own pnpm repository | Compliance, release-age and inspection report, no changes |
 | `machine` | User computer | Report first, then user-level configuration after approval |
 
 ## How it works
@@ -73,8 +74,8 @@ The agent follows `SKILL.md`. Every check that a program can do is a script: the
 | Area | Permission |
 |---|---|
 | Read | Files of the target repository, user-level package manager configuration, VS Code user settings (scenario `machine`) |
-| Write | After approval, only: `package.json`, `pnpm-workspace.yaml`, `.npmrc`, lockfiles, `.github/workflows/node-security.yml`, one section of `README.md` |
-| Delete | After approval, in scenario `migrate` only: npm or Yarn lockfiles and `node_modules` |
+| Write | After approval, only: `package.json`, `pnpm-workspace.yaml`, `.npmrc`, lockfiles, `.github/workflows/node-security.yml`, one section of `README.md`. In scenario `migrate`, also the files of the validated plan (framework configuration and files with npm commands). In scenario `machine`, user-level pnpm and npm configuration |
+| Delete | After approval, in scenario `migrate` only: npm or Yarn lockfiles, `node_modules`, an empty `.npmrc`, and `pnpm-lock.yaml` to resolve dependencies again |
 | Run | Its own scripts, `node -e` for the deletions of the migration, `pnpm`, `npm`, read-only `git` commands, `corepack disable pnpm` (scenario `machine`). Never the scripts of a foreign repository |
 | Network | npm registry only (package manager, and package metadata for `release-age.mjs`) |
 
@@ -109,6 +110,18 @@ Pattern detection is never complete. The skill instructs the agent to treat all 
 - Code that you run from a foreign repository runs with your access. Without a container or a virtual machine, inspection before execution is the main control.
 - Publication of packages (two-factor authentication, trusted publishing, a separate publish job) is out of the scope of this version.
 
+## Validation status
+
+| Scenario | Validation |
+|---|---|
+| `migrate` | Three pilots with an AI agent on a real Angular 21 repository, the last one from start to end: release-age block, `.npmrc` translation, npm references, build approvals by least privilege, build and tests. |
+| `audit` | One pilot with an AI agent, and inspection of a real repository. |
+| `foreign` | Scripts tested with trap repositories (hidden code, editor auto-run, root executables, prompt injection) and with public repositories (Express, Vite, SvelteKit, next-learn) for false positives. No pilot with an AI agent yet. |
+| `new`, `npm` | Unit tests only. |
+| `machine` | pnpm installation in a pilot. VS Code behavior verified by hand on Windows (see `reference/versions.md`). |
+
+Every behavior that `reference/versions.md` marks as verified was tested with the versions that it names.
+
 ## Requirements
 
 - Node.js 22 or later.
@@ -128,7 +141,7 @@ Unit tests of the scripts, from the `node-security/` documentation folder (the p
 node --test tests/scripts.test.mjs tests/evals.test.mjs
 ```
 
-Fixtures are generated at runtime in the system temporary directory. Trap fixtures (injected agent instructions, editor auto-run tasks) are never committed, so that agents and editors that work on this repository cannot load them.
+Fixtures are generated at runtime in the system temporary directory. Trap fixtures (injected agent instructions, editor auto-run tasks, hidden code) are never committed, so that agents and editors that work on this repository cannot load them. Their payload text is inert. On Windows, tests that need `bash` or symbolic links are skipped.
 
 ### Behavioral evaluations
 
@@ -140,11 +153,16 @@ Fixtures are generated at runtime in the system temporary directory. Trap fixtur
 
 Foreign fixtures point to reserved `.example` domains (RFC 2606): a failed evaluation that installs or fetches reaches nothing.
 
+## Review
+
+Reviews are welcome. See [CONTRIBUTING.md](../CONTRIBUTING.md) for what helps most and how to report a false positive.
+
 ## Versioning
 
 - `metadata.version` in `SKILL.md` follows semantic versioning.
 - `reference/versions.md` is the only file with version-specific data. If its review date is older than 60 days, the agent compares it with the npm registry and reports differences. It never changes the protocol by itself.
 - A change to the protocol needs a reviewed pull request and a signed release.
+- Versions 0.x are pre-releases. Version 1.0.0 is the first signed release.
 
 ## License
 

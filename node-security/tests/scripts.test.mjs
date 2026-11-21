@@ -656,3 +656,15 @@ test('npm references: VS Code tasks of type npm', () => {
   const out = JSON.parse(run('detect.mjs', [dir, '--owners', 'me']).stdout);
   assert.deepEqual(out.facts.npmReferences.map((r) => `${r.file}:${r.line}`), ['.vscode/tasks.json:3']);
 });
+
+test('validate-plan: .vscode/settings.json only with a VS Code npm task reference', () => {
+  const repo = fixture({ 'package.json': { name: 'a' }, 'package-lock.json': '{}', '.vscode/tasks.json': '{}' });
+  const planFile = path.join(fixture({}), 'plan.json');
+  const base = { ...goodPlan, releaseAgeOption: 'none', editFiles: ['package.json', '.vscode/settings.json'] };
+  fs.writeFileSync(planFile, JSON.stringify({ ...base, npmReferences: ['.vscode/tasks.json:3'] }));
+  assert.equal(runJson('validate-plan.mjs', [planFile, '--repo', repo]).code, 0);
+  fs.writeFileSync(planFile, JSON.stringify({ ...base, npmReferences: [] }));
+  const r = runJson('validate-plan.mjs', [planFile, '--repo', repo]);
+  assert.equal(r.code, 1);
+  assert.ok(r.json.results.some((x) => x.id === 'EDIT' && x.detail.includes('.vscode/settings.json')));
+});

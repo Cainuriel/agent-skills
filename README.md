@@ -2,13 +2,15 @@
 
 Security-focused [Agent Skills](https://agentskills.io) for AI coding agents.
 
+> **Status: pre-release, under peer review.** There is no signed release yet. Until version 1.0.0, use the `main` branch and expect changes. Reviews are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 A skill is a folder with a `SKILL.md` file and optional scripts, references and templates. Any agent that implements the open Agent Skills format (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI, Kimi Code and others) can load it.
 
 ## Skills
 
 | Folder | Skill | Purpose | Status |
 |---|---|---|---|
-| [`node-security/`](node-security/) | `node-security` | Supply-chain security protocol for Node.js and JavaScript repositories | 0.1.5, draft, not signed |
+| [`node-security/`](node-security/) | `node-security` | Supply-chain security protocol for Node.js and JavaScript repositories: pnpm by default, release-age control, inspection of foreign repositories before anything runs | 0.1.6, pre-release, not signed |
 
 ## Repository layout
 
@@ -17,12 +19,16 @@ Each skill has its own folder. The folder contains the documentation, the tests 
 ```
 agent-skills/
 ├── README.md                  This file: catalog, installation, release verification
+├── CONTRIBUTING.md            Reviews, issues and pull requests
+├── SECURITY.md                Private vulnerability reports
 ├── LICENSE                    Apache License 2.0
+├── .gitattributes             LF line endings on all platforms (needed for the hash checks)
 ├── install.ps1                Installer for Windows
 ├── install.sh                 Installer for Linux, macOS and WSL
 ├── tools/release/             Release tooling for the maintainer (manifest, message, signing page)
 └── <skill>/
     ├── README.md              Documentation of the skill
+    ├── CHANGELOG.md           Changes per version
     ├── <skill>/               The installable skill: the only folder that agents load
     ├── tests/                 Unit tests of the skill scripts
     └── evals/                 Behavioral evaluations for agents
@@ -41,7 +47,7 @@ Install a skill once per machine, not once per project. The installers link the 
 | `~/.agents/skills/` | GitHub Copilot, OpenAI Codex, Gemini CLI, Kimi Code |
 | `~/.claude/skills/` | Claude Code (and GitHub Copilot) |
 
-1. Clone this repository and check out a release tag, not `main`.
+1. Clone this repository and check out a release tag, not `main`. Before the first signed release, use `main`.
 2. Run the installer:
 
    ```powershell
@@ -81,8 +87,8 @@ To verify a release:
 
 1. Check that the address is the maintainer address published outside this repository (see "Maintainer identity").
 2. Check that `<git-commit>` is the commit of the tag: `git rev-parse <skill>-v<version>^{commit}`.
-3. Check the manifest hash: `sha256sum <skill>/SHA256SUMS` must give `<sha256-of-SHA256SUMS>`.
-4. Check the files: in the `<skill>/` folder, `sha256sum -c SHA256SUMS`. The installers do this step automatically.
+3. Check the manifest hash: `sha256sum <skill>/SHA256SUMS` must give `<sha256-of-SHA256SUMS>`. On Windows: `(Get-FileHash <skill>\SHA256SUMS).Hash.ToLower()`.
+4. Check the files: in the `<skill>/` folder, `sha256sum -c SHA256SUMS`. The installers do this step automatically, also on Windows.
 5. Check the signature: `cast wallet verify --address <address> "<message>" <signature>` (Foundry), or the signature verification page of Etherscan.
 
 Steps 3 and 4 prove integrity. Only step 5, with an address from step 1, proves authorship. An attacker who controls this repository can replace the files, the manifest, the signature and any address written here.
@@ -128,13 +134,11 @@ The signing address and its `did:pkh` identifier will be published with the firs
 
 ## Contributing
 
-Contributions are welcome through pull requests. The maintainer reviews every change. Only the maintainer signs releases. A merged change is not part of a signed release until the next release.
-
-Pull requests that change security defaults (for example the minimum release age or the build approval rules) must explain the reason.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 
-Report vulnerabilities privately through GitHub security advisories of this repository. Do not open a public issue for a vulnerability.
+See [SECURITY.md](SECURITY.md). Do not open a public issue for a vulnerability.
 
 ## License
 
